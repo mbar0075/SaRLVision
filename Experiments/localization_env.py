@@ -1,6 +1,5 @@
 import cv2
 import gymnasium as gym
-from gymnasium import spaces
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,28 +8,26 @@ import torchvision.models as models
 import matplotlib.pyplot as plt
 
 class ObjectLocalizationEnv(gym.Env):
-    def __init__(self, image, target_box, max_steps=100, alpha=0.2):
+    def __init__(self, image, target_box, max_steps=100, alpha=0.2, iou_threshold=0.9):
         super(ObjectLocalizationEnv, self).__init__()
 
-        self.image = image  # The input image
-        self.target_box = target_box  # Ground truth box for the target object
+        self.image = image
+        self.target_box = target_box
         self.height = image.shape[0]
         self.width = image.shape[1]
-        self.observation_space = spaces.Box(0, 255, shape=(224, 224, 3), dtype=np.uint8)  # RGB image
-        self.action_space = spaces.Discrete(9)  # 8 transformations and 1 trigger action
+        self.observation_space = gym.spaces.Box(0, 1, shape=(3, 224, 224), dtype=np.float32)
+        self.action_space = gym.spaces.Discrete(9)
         self.max_steps = max_steps
         self.step_count = 0
-        self.alpha = alpha  # Transformation factor
+        self.alpha = alpha
         self.cumulative_reward = 0
         self.truncated = False
-        self.history_vector = np.zeros(9, dtype=np.uint8)  # History of taken actions
+        self.iou_threshold = iou_threshold
 
-        # Initialize the bounding box [x1, y1, x2, y2]
         self.bbox = [0, 0, self.width, self.height]
 
-        # Load a pre-trained VGG16 model
         self.vgg16 = models.vgg16(pretrained=True)
-        self.vgg16.classifier = nn.Sequential(*list(self.vgg16.classifier.children())[:-3])  # Remove the last layers
+        self.vgg16 = nn.Sequential(*list(self.vgg16.features.children())[:-1])
 
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
@@ -39,21 +36,27 @@ class ObjectLocalizationEnv(gym.Env):
         ])
 
     def step(self, action):
+        if self.cumulative_reward < 0:
+            return self.get_state(), 0.0, True, False, {}  # Stop if the cumulative reward is negative
+
         previous_iou = self.calculate_iou(self.bbox, self.target_box)
 
         if action < 8:  # Transformation actions
-            # Apply the transformation to the bounding box
             self.transform_box(action)
         elif action == 8:  # Trigger action
-            return self.image, 0, True, False, {}
-        elif self.truncated:
-            return self.image, -1.0, True, True, {}
+            return self.get_state(), 0.0, True, False, {}
 
-        # Calculate IoU and compute the reward
+        if self.truncated:
+            return self.get_state(), 0.0, False, True, {}
+
         current_iou = self.calculate_iou(self.bbox, self.target_box)
         reward = self.calculate_reward(previous_iou, current_iou)
 
-        # Update the observation, step count, and done flag
+        self.cumulative_reward += reward  # Update cumulative reward
+
+        if current_iou >= self.iou_threshold:
+            return self.get_state(), self.cumulative_reward, True, False, {}  # Stop if IoU threshold is reached
+
         observation = self.get_state()
         self.step_count += 1
         terminated = self.step_count >= self.max_steps
@@ -65,38 +68,31 @@ class ObjectLocalizationEnv(gym.Env):
         alpha_w = int(self.alpha * (x2 - x1))
         alpha_h = int(self.alpha * (y2 - y1))
 
-        # Calculate the new coordinates without actually updating the bounding box
         new_x1, new_y1, new_x2, new_y2 = x1, y1, x2, y2
 
         if action == 0:  # Move X1 left
-            new_x1 = max(0, new_x1 - alpha_w)  # Ensure new_x1 is not outside the left boundary
+            new_x1 = max(0, new_x1 - alpha_w)
         elif action == 1:  # Move X1 right
-            new_x1 = min(self.width, new_x1 + alpha_w)  # Ensure new_x1 is not outside the right boundary
+            new_x1 = min(self.width, new_x1 + alpha_w)
         elif action == 2:  # Move X2 left
-            new_x2 = max(0, new_x2 - alpha_w)  # Ensure new_x2 is not outside the left boundary
+            new_x2 = max(0, new_x2 - alpha_w)
         elif action == 3:  # Move X2 right
-            new_x2 = min(self.width, new_x2 + alpha_w)  # Ensure new_x2 is not outside the right boundary
+            new_x2 = min(self.width, new_x2 + alpha_w)
         elif action == 4:  # Move Y1 up
-            new_y1 = max(0, new_y1 - alpha_h)  # Ensure new_y1 is not outside the top boundary
+            new_y1 = max(0, new_y1 - alpha_h)
         elif action == 5:  # Move Y1 down
-            new_y1 = min(self.height, new_y1 + alpha_h)  # Ensure new_y1 is not outside the bottom boundary
+            new_y1 = min(self.height, new_y1 + alpha_h)
         elif action == 6:  # Move Y2 up
-            new_y2 = max(0, new_y2 - alpha_h)  # Ensure new_y2 is not outside the top boundary
+            new_y2 = max(0, new_y2 - alpha_h)
         elif action == 7:  # Move Y2 down
-            new_y2 = min(self.height, new_y2 + alpha_h)  # Ensure new_y2 is not outside the bottom boundary
+            new_y2 = min(self.height, new_y2 + alpha_h)
 
-        # Check if the new coordinates are valid
-        if self.check_valid_action():
-            # Update the bounding box with the new coordinates
+        if self.check_valid_action(new_x1, new_y1, new_x2, new_y2):
             self.bbox = [new_x1, new_y1, new_x2, new_y2]
         else:
             self.truncated = True
 
-
     def calculate_iou(self, bbox, target_box):
-        # print("bbox: ", bbox)
-        # print("target_box: ", target_box)
-        # Calculate the IoU between the bounding box and the target box
         x1, y1, x2, y2 = bbox
         x1_gt, y1_gt, x2_gt, y2_gt = target_box
 
@@ -112,50 +108,41 @@ class ObjectLocalizationEnv(gym.Env):
         iou = intersection_area / (bbox_area + target_area - intersection_area)
         return iou
 
-
     def calculate_reward(self, previous_iou, current_iou):
-        # Calculate the reward based on IoU improvement
-        return np.sign(current_iou - previous_iou)
+        return current_iou - previous_iou  # Reward based on IoU improvement
 
     def get_state(self):
-        # Extract features from the current region using the VGG16 model
-        # change bbox to int
         self.bbox = [int(i) for i in self.bbox]
         x1, y1, x2, y2 = self.bbox
-        # Make sure the bounding box is within the image
 
         region = self.image[y1:y2, x1:x2]
+        region = cv2.resize(region, (224, 224))
         region = self.transform(region)
-        region = torch.unsqueeze(region, 0)  # Add batch dimension
         features = self.vgg16(region)
         features = features.view(-1).detach().numpy()
 
-        # Combine features (o) and history (h) into the state representation
-        state = (features, self.history_vector)
-
+        state = (features, np.array(self.history_vector, dtype=np.float32))
         return state
 
-    def check_valid_action(self):
-        # Check if the action is valid
-        x1, y1, x2, y2 = self.bbox
-        if x1 < 0 or y1 < 0 or x2 > self.width or y2 > self.height:
+    def check_valid_action(self, new_x1, new_y1, new_x2, new_y2):
+        if new_x1 < 0 or new_y1 < 0 or new_x2 > self.width or new_y2 > self.height:
             return False
         return True
-    
+
     def reset(self):
-        # Reset the environment to its initial state
         self.step_count = 0
         self.cumulative_reward = 0
-        self.history_vector = np.zeros(9, dtype=np.uint8)
+        self.history_vector = np.zeros(9, dtype=np.float32)
         self.bbox = [0, 0, self.width, self.height]
         self.truncated = False
         return self.get_state()
 
-    def render(self):
-        # Render the environment
+    def render(self, mode='image'):
         x1, y1, x2, y2 = self.bbox
         image = self.image.copy()
         image = cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        plt.imshow(image)
-        plt.axis('off')
-        plt.show()
+        if mode == 'image':
+            plt.imshow(image)
+            plt.axis('off')
+            plt.show()
+        return image
