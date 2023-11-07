@@ -10,11 +10,13 @@ from enum import Enum
 import pandas as pd
 
 # Akisato Kimura <akisato@ieee.org> implementation of Itti's Saliency Map Generator -- https://github.com/akisatok/pySaliencyMap
-import SaRa.pySaliencyMap as pySaliencyMap
+import pySaliencyMap
 
 
 # Global Variables
-WEIGHTS = (1, 1, 1)
+
+# Entropy, sum, depth, centre-bias
+WEIGHTS = (1, 1, 1, 1)
 
 # segments_entropies = []
 segments_scores = []
@@ -65,7 +67,7 @@ def generate_segments(img, seg_count) -> list:
     return segments
 
 
-def return_saliency(img, generator='itti'):
+def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=None, DEVICE='cpu'):
     '''
     Takes an image img as input and calculates the saliency map using the 
     Itti's Saliency Map Generator. It returns the saliency map.
@@ -90,10 +92,13 @@ def return_saliency(img, generator='itti'):
 
         import deepgaze_pytorch
 
-        DEVICE = 'cpu'
-
         # you can use DeepGazeI or DeepGazeIIE
-        model = deepgaze_pytorch.DeepGazeIIE(pretrained=True).to(DEVICE)
+        # model = deepgaze_pytorch.DeepGazeIIE(pretrained=True).to(DEVICE)
+
+        if deepgaze_model is None:
+            model = deepgaze_pytorch.DeepGazeIIE(pretrained=True).to(DEVICE)
+        else:
+            model = deepgaze_model
 
         # image = face()
         image = img
@@ -122,7 +127,7 @@ def return_saliency(img, generator='itti'):
         import inference as inf
 
         results_dict = {}
-        rt_args = inf.parse_arguments()
+        rt_args = inf.parse_arguments(img)
         
         # Call the run_inference function and capture the results
         pred_masks_raw_list, pred_masks_round_list = inf.run_inference(rt_args)
@@ -134,26 +139,88 @@ def return_saliency(img, generator='itti'):
         saliency_map = results_dict['pred_masks_raw']
 
         if img_width > img_height:
-            print(img_width, img_height)
             saliency_map = cv2.resize(saliency_map, (img_width, img_width))
 
             diff = (img_width - img_height) // 2
 
             saliency_map = saliency_map[diff:img_width - diff, 0:img_width]
         else:
-            print(img_width, img_height)
             saliency_map = cv2.resize(saliency_map, (img_height, img_height))
 
             diff = (img_height - img_width) // 2
 
             saliency_map = saliency_map[0:img_height, diff:img_height - diff]
 
+    elif generator == 'emlnet':
+        from emlnet.eval_combined import main as eval_combined
+        saliency_map = eval_combined(img, emlnet_models)
+
+        # Resize to image size
+        saliency_map = cv2.resize(saliency_map, (img_width, img_height))
 
     # Normalize saliency map
     saliency_map = cv2.normalize(saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
 
     return saliency_map
 
+
+def return_saliency_batch(images, generator='deepgaze', deepgaze_model=None, emlnet_models=None, DEVICE='cuda', BATCH_SIZE=1):
+    img_widths, img_heights = [], []
+    if generator == 'deepgaze':
+        import numpy as np
+        from scipy.misc import face
+        from scipy.ndimage import zoom
+        from scipy.special import logsumexp
+        import torch
+
+        import deepgaze_pytorch
+
+        # you can use DeepGazeI or DeepGazeIIE
+        # model = deepgaze_pytorch.DeepGazeIIE(pretrained=True).to(DEVICE)
+
+        if deepgaze_model is None:
+            model = deepgaze_pytorch.DeepGazeIIE(pretrained=True).to(DEVICE)
+        else:
+            model = deepgaze_model
+
+        # image = face()
+        # image = img
+        image_batch = torch.tensor([img.transpose(2, 0, 1) for img in images]).to(DEVICE)
+        centerbias_template = np.zeros((1024, 1024))
+        centerbias_tensors = []
+
+        for img in images:
+            centerbias = zoom(centerbias_template, (img.shape[0] / centerbias_template.shape[0], img.shape[1] / centerbias_template.shape[1]), order=0, mode='nearest')
+            centerbias -= logsumexp(centerbias)
+            centerbias_tensors.append(torch.tensor(centerbias).to(DEVICE))
+
+            # Set img_width and img_height
+            img_widths.append(img.shape[1])
+
+
+        # rescale to match image size
+        # centerbias = zoom(centerbias_template, (image.shape[0]/centerbias_template.shape[0], image.shape[1]/centerbias_template.shape[1]), order=0, mode='nearest')
+        # # renormalize log density
+        # centerbias -= logsumexp(centerbias)
+
+        # image_tensor = torch.tensor([image.transpose(2, 0, 1)]).to(DEVICE)
+        # centerbias_tensor = torch.tensor([centerbias]).to(DEVICE)
+        with torch.no_grad():
+            # Process the batch of images in one forward pass
+            log_density_predictions = model(image_batch, torch.stack(centerbias_tensors))
+
+        # log_density_prediction = model(image_tensor, centerbias_tensor)
+
+        # saliency_map = cv2.resize(log_density_prediction.detach().cpu().numpy()[0, 0], (img_width, img_height))
+
+        saliency_maps = []
+
+        for i in range(len(images)):
+            saliency_map = cv2.resize(log_density_predictions[i, 0].cpu().numpy(), (img_widths[i], img_widths[i]))
+            saliency_maps.append(saliency_map)
+
+        return saliency_maps
+    
 
 # def return_itti_saliency(img):
 #     '''
@@ -187,7 +254,7 @@ def calculate_pixel_frequency(img) -> dict:
     return pixels_frequency
 
 
-def calculate_score(H, ds, cb, w):
+def calculate_score(H, sum, ds, cb, w):
     '''
     Calculates the saliency score of an image img using the entropy H, depth score ds, centre-bias cb and weights w. It returns the saliency score.
     '''
@@ -196,13 +263,15 @@ def calculate_score(H, ds, cb, w):
     # H = (H - 0) / (math.log(2, 256) - 0)
 
     # H = wth root of H
-    H = H ** (1 / w[0])
+    H = H ** w[0]
 
-    ds = ds ** w[1]
+    sum = sum ** w[1]
 
-    cb = cb ** w[2]
+    ds = ds ** w[2]
 
-    return H + ds + cb
+    cb = cb ** w[3]
+
+    return H + sum + ds + cb
 
 
 def calculate_entropy(img, w, dw) -> float:
@@ -230,7 +299,7 @@ def calculate_entropy(img, w, dw) -> float:
 
     for px in pixels_frequency:
         t_prob = pixels_frequency[px] / total_pixels
-        entropy += entropy + (t_prob * math.log((1 / t_prob), 2))
+        entropy += (t_prob * math.log((1 / t_prob), 2))
 
     # entropy = entropy * wt * dw
 
@@ -251,13 +320,17 @@ def find_most_salient_segment(segments, kernel, dws):
 
     for segment in segments:
         temp_entropy = calculate_entropy(segment, kernel[i], dws[i])
+        # Normalise semgnet bweetn 0 and 255
+        segment = cv2.normalize(segment, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
+        temp_sum = np.sum(segment)
         # temp_tup = (i, temp_entropy)
         # segments_entropies.append(temp_tup)
 
         w = WEIGHTS
-        temp_score = calculate_score(temp_entropy, dws[i], kernel[i], w)
+        
+        temp_score = calculate_score(temp_entropy, temp_sum, dws[i], kernel[i], w)
 
-        temp_tup = (i, temp_score, temp_entropy, kernel[i], dws[i])
+        temp_tup = (i, temp_score, temp_entropy ** w[0], temp_sum ** w[1], kernel[i] ** w[2], dws[i] ** w[3])
 
         # segments_scores.append((i, temp_score))
         segments_scores.append(temp_tup)
@@ -365,7 +438,7 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
     text_overlay = np.zeros_like(img, dtype=np.uint8)
 
     sara_list_out = []
-    
+
     for ent in reversed(sorted_seg_scores):
         quartile = 0
         if mode == 0:
@@ -385,10 +458,15 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
                 t = 4
                 t = 6
                 quartile = 3
-            elif print_index + 1 <= set_value * 4:
+            # elif print_index + 1 <= set_value * 4:
+            #     color = (0, 250, 0, 64)
+            #     t = 8
+            #     quartile = 4
+            else:
                 color = (0, 250, 0, 64)
                 t = 8
                 quartile = 4
+
 
         x1 = segments_coords[ent[0]][1]
         y1 = segments_coords[ent[0]][2]
@@ -417,8 +495,8 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
         
 
 
-        # Rank, score, entropy, centre-bias, depth, index, quartile
-        sara_tuple = (ent[0], ent[1], ent[2], ent[3], ent[4], print_index, quartile)
+        # Rank, score, entropy, sum, centre-bias, depth, index, quartile
+        sara_tuple = (ent[0], ent[1], ent[2], ent[3], ent[4], ent[5], print_index, quartile)
         sara_list_out.append(sara_tuple)
         print_index -= 1
 
@@ -455,7 +533,7 @@ def generate_sara(tex, tex_segments):
     dict_scores = {}
 
     for segment in segments_scores:
-        dict_scores[segment[0]] = [segment[1], segment[2], segment[3], segment[4]]
+        dict_scores[segment[0]] = [segment[1], segment[2], segment[3], segment[4], segment[5]]
 
     # sorted_entropies = sorted(dict_entropies.items(),
     #                           key=operator.itemgetter(1), reverse=True)
@@ -468,7 +546,7 @@ def generate_sara(tex, tex_segments):
     sorted_scores = sorted(dict_scores.items(), key=lambda x: x[1][0], reverse=True)
     
     # flatten
-    sorted_scores = [[i[0], i[1][0], i[1][1], i[1][2], i[1][3]] for i in sorted_scores]
+    sorted_scores = [[i[0], i[1][0], i[1][1], i[1][2], i[1][3], i[1][4]] for i in sorted_scores]
 
     # tex_out, sara_list_out = generate_heatmap(
     #     tex, 1, sorted_entropies, segments_coords)
@@ -479,7 +557,7 @@ def generate_sara(tex, tex_segments):
     return tex_out, sara_list_out
 
 
-def return_sara(input_img, grid, generator='itti'):
+def return_sara(input_img, grid, generator='itti', saliency_map=None):
     '''
     Computes the SaRa output for the given input image. It uses the 
     generate_sara function internally. It returns the SaRa output image and 
@@ -489,10 +567,14 @@ def return_sara(input_img, grid, generator='itti'):
     global seg_dim
     seg_dim = grid
 
-    tex_segments = generate_segments(return_saliency(input_img, generator), seg_dim)
+    if saliency_map is None:
+        tex_segments = generate_segments(return_saliency(input_img, generator), seg_dim)
+    else:
+        tex_segments = generate_segments(saliency_map, seg_dim)
+
     # tex_segments = generate_segments(input_img, seg_dim)
     sara_output, sara_list_output = generate_sara(input_img, tex_segments)
- 
+
     return sara_output, sara_list_output
 
 
