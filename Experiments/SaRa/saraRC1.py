@@ -277,7 +277,7 @@ def calculate_score(H, sum, ds, cb, w):
 
     ds = ds ** w[2]
 
-    cb = cb ** w[3]
+    cb = (cb + 1) ** w[3]
 
     return H + sum + ds + cb
 
