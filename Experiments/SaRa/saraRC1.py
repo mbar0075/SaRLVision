@@ -165,6 +165,10 @@ def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=No
     saliency_map = cv2.normalize(
         saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
 
+    saliency_map = cv2.GaussianBlur(saliency_map, (31, 31), 10)
+    return saliency_map
+    saliency_map = saliency_map // 16
+
     return saliency_map
 
 
@@ -341,7 +345,7 @@ def find_most_salient_segment(segments, kernel, dws):
             temp_entropy, temp_sum, dws[i], kernel[i], w)
 
         temp_tup = (i, temp_score, temp_entropy **
-                    w[0], temp_sum ** w[1], kernel[i] ** w[2], dws[i] ** w[3])
+                    w[0], temp_sum ** w[1], (kernel[i] + 1) ** w[2], dws[i] ** w[3])
 
         # segments_scores.append((i, temp_score))
         segments_scores.append(temp_tup)
@@ -575,10 +579,9 @@ def return_sara(input_img, grid, generator='itti', saliency_map=None):
     seg_dim = grid
 
     if saliency_map is None:
-        tex_segments = generate_segments(
-            return_saliency(input_img, generator), seg_dim)
-    else:
-        tex_segments = generate_segments(saliency_map, seg_dim)
+        saliency_map = return_saliency(input_img, generator)
+
+    tex_segments = generate_segments(saliency_map, seg_dim)
 
     # tex_segments = generate_segments(input_img, seg_dim)
     sara_output, sara_list_output = generate_sara(input_img, tex_segments)
