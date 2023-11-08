@@ -55,13 +55,13 @@ def generate_segments(img, seg_count) -> list:
     for i in range(segment_count):
         for j in range(segment_count):
             temp_segment = img[int(h_interval * i):int(h_interval * (i + 1)),
-                               int(w_interval * j):int(w_interval * (j + 1))]
+                              int(w_interval * j):int(w_interval * (j + 1))]
             segments.append(temp_segment)
-
+            
             coord_tup = (index, int(w_interval * j), int(h_interval * i),
                          int(w_interval * (j + 1)), int(h_interval * (i + 1)))
             segments_coords.append(coord_tup)
-
+            
             index += 1
 
     return segments
@@ -82,8 +82,7 @@ def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=No
 
         # Scale pixel values to 0-255 instead of float (approx 0, hence black image)
         # https://stackoverflow.com/questions/48331211/how-to-use-cv2-imshow-correctly-for-the-float-image-returned-by-cv2-distancet/48333272
-        saliency_map = cv2.normalize(
-            saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
+        saliency_map = cv2.normalize(saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
     elif generator == 'deepgaze':
         import numpy as np
         from scipy.misc import face
@@ -110,8 +109,7 @@ def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=No
         # centerbias_template = np.load('centerbias_mit1003.npy')
         centerbias_template = np.zeros((1024, 1024))
         # rescale to match image size
-        centerbias = zoom(centerbias_template, (image.shape[0]/centerbias_template.shape[0],
-                          image.shape[1]/centerbias_template.shape[1]), order=0, mode='nearest')
+        centerbias = zoom(centerbias_template, (image.shape[0]/centerbias_template.shape[0], image.shape[1]/centerbias_template.shape[1]), order=0, mode='nearest')
         # renormalize log density
         centerbias -= logsumexp(centerbias)
 
@@ -120,8 +118,7 @@ def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=No
 
         log_density_prediction = model(image_tensor, centerbias_tensor)
 
-        saliency_map = cv2.resize(log_density_prediction.detach().cpu().numpy()[
-                                  0, 0], (img_width, img_height))
+        saliency_map = cv2.resize(log_density_prediction.detach().cpu().numpy()[0, 0], (img_width, img_height))
 
     elif generator == 'fpn':
         # Add ./fpn to the system path
@@ -131,10 +128,10 @@ def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=No
 
         results_dict = {}
         rt_args = inf.parse_arguments(img)
-
+        
         # Call the run_inference function and capture the results
         pred_masks_raw_list, pred_masks_round_list = inf.run_inference(rt_args)
-
+        
         # Store the results in the dictionary
         results_dict['pred_masks_raw'] = pred_masks_raw_list
         results_dict['pred_masks_round'] = pred_masks_round_list
@@ -162,13 +159,11 @@ def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=No
         saliency_map = cv2.resize(saliency_map, (img_width, img_height))
 
     # Normalize saliency map
-    saliency_map = cv2.normalize(
-        saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
+    saliency_map = cv2.normalize(saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
 
     saliency_map = cv2.GaussianBlur(saliency_map, (31, 31), 10)
-    return saliency_map
     saliency_map = saliency_map // 16
-
+    
     return saliency_map
 
 
@@ -193,19 +188,18 @@ def return_saliency_batch(images, generator='deepgaze', deepgaze_model=None, eml
 
         # image = face()
         # image = img
-        image_batch = torch.tensor([img.transpose(2, 0, 1)
-                                   for img in images]).to(DEVICE)
+        image_batch = torch.tensor([img.transpose(2, 0, 1) for img in images]).to(DEVICE)
         centerbias_template = np.zeros((1024, 1024))
         centerbias_tensors = []
 
         for img in images:
-            centerbias = zoom(centerbias_template, (img.shape[0] / centerbias_template.shape[0],
-                              img.shape[1] / centerbias_template.shape[1]), order=0, mode='nearest')
+            centerbias = zoom(centerbias_template, (img.shape[0] / centerbias_template.shape[0], img.shape[1] / centerbias_template.shape[1]), order=0, mode='nearest')
             centerbias -= logsumexp(centerbias)
             centerbias_tensors.append(torch.tensor(centerbias).to(DEVICE))
 
             # Set img_width and img_height
             img_widths.append(img.shape[1])
+
 
         # rescale to match image size
         # centerbias = zoom(centerbias_template, (image.shape[0]/centerbias_template.shape[0], image.shape[1]/centerbias_template.shape[1]), order=0, mode='nearest')
@@ -216,8 +210,7 @@ def return_saliency_batch(images, generator='deepgaze', deepgaze_model=None, eml
         # centerbias_tensor = torch.tensor([centerbias]).to(DEVICE)
         with torch.no_grad():
             # Process the batch of images in one forward pass
-            log_density_predictions = model(
-                image_batch, torch.stack(centerbias_tensors))
+            log_density_predictions = model(image_batch, torch.stack(centerbias_tensors))
 
         # log_density_prediction = model(image_tensor, centerbias_tensor)
 
@@ -226,16 +219,21 @@ def return_saliency_batch(images, generator='deepgaze', deepgaze_model=None, eml
         saliency_maps = []
 
         for i in range(len(images)):
-            saliency_map = cv2.resize(
-                log_density_predictions[i, 0].cpu().numpy(), (img_widths[i], img_widths[i]))
+            saliency_map = cv2.resize(log_density_predictions[i, 0].cpu().numpy(), (img_widths[i], img_widths[i]))
+
+            saliency_map = cv2.normalize(saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
+
+            saliency_map = cv2.GaussianBlur(saliency_map, (31, 31), 10)
+            saliency_map = saliency_map // 16
+            
             saliency_maps.append(saliency_map)
 
         return saliency_maps
-
+    
 
 # def return_itti_saliency(img):
 #     '''
-#     Takes an image img as input and calculates the saliency map using the
+#     Takes an image img as input and calculates the saliency map using the 
 #     Itti's Saliency Map Generator. It returns the saliency map.
 #     '''
 
@@ -276,7 +274,8 @@ def calculate_score(H, sum, ds, cb, w):
     # H = wth root of H
     H = H ** w[0]
 
-    sum = np.log(sum)
+    if sum > 0:
+        sum = np.log(sum)
     sum = sum ** w[1]
 
     ds = ds ** w[2]
@@ -311,7 +310,9 @@ def calculate_entropy(img, w, dw) -> float:
 
     for px in pixels_frequency:
         t_prob = pixels_frequency[px] / total_pixels
-        entropy += (t_prob * math.log((1 / t_prob), 2))
+
+        if t_prob != 0:
+            entropy += (t_prob * math.log((1 / t_prob), 2))
 
     # entropy = entropy * wt * dw
 
@@ -333,19 +334,16 @@ def find_most_salient_segment(segments, kernel, dws):
     for segment in segments:
         temp_entropy = calculate_entropy(segment, kernel[i], dws[i])
         # Normalise semgnet bweetn 0 and 255
-        segment = cv2.normalize(segment, None, 255, 0,
-                                cv2.NORM_MINMAX, cv2.CV_8UC1)
+        segment = cv2.normalize(segment, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
         temp_sum = np.sum(segment)
         # temp_tup = (i, temp_entropy)
         # segments_entropies.append(temp_tup)
 
         w = WEIGHTS
+        
+        temp_score = calculate_score(temp_entropy, temp_sum, dws[i], kernel[i], w)
 
-        temp_score = calculate_score(
-            temp_entropy, temp_sum, dws[i], kernel[i], w)
-
-        temp_tup = (i, temp_score, temp_entropy **
-                    w[0], temp_sum ** w[1], (kernel[i] + 1) ** w[2], dws[i] ** w[3])
+        temp_tup = (i, temp_score, temp_entropy ** w[0], temp_sum ** w[1], (kernel[i] + 1) ** w[2], dws[i] ** w[3])
 
         # segments_scores.append((i, temp_score))
         segments_scores.append(temp_tup)
@@ -384,6 +382,7 @@ def make_gaussian(size, fwhm=10, center=None):
         x0 = center[0]
         y0 = center[1]
 
+    
     return np.exp(-4 * np.log(2) * ((x - x0) ** 2 + (y - y0) ** 2) / fwhm ** 2)
 
 
@@ -399,8 +398,7 @@ def gen_depth_weights(d_segments, depth_map) -> list:
     first_nz = next((i for i, x in enumerate(hist_d) if x), None)
 
     # Get last non-zero index
-    rev = (len(hist_d) - idx for idx,
-           item in enumerate(reversed(hist_d), 1) if item)
+    rev = (len(hist_d) - idx for idx, item in enumerate(reversed(hist_d), 1) if item)
     last_nz = next(rev, default=None)
 
     mid = (first_nz + last_nz) / 2
@@ -482,6 +480,7 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
                 t = 8
                 quartile = 4
 
+
         x1 = segments_coords[ent[0]][1]
         y1 = segments_coords[ent[0]][2]
         x2 = segments_coords[ent[0]][3]
@@ -495,19 +494,20 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
         x = int((x1 + x2) / 2)
         y = int((y1 + y2) / 2)
 
+
+
         # fill rectangle
         cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
 
         cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), 1)
         # put text in the middle of the rectangle
-
+        
         # white text
         cv2.putText(text_overlay, str(print_index), (x - 5, y),
                     font, .4, (255, 255, 255), 1, cv2.LINE_AA)
-
-        # Rank, score, entropy, sum, centre-bias, depth, index, quartile
-        sara_tuple = (ent[0], ent[1], ent[2], ent[3],
-                      ent[4], ent[5], print_index, quartile)
+        
+        # rank, index, score, entropy, entropy_sum, centre_bias, depth, quartile
+        sara_tuple = (ent[0], print_index, ent[1], ent[2], ent[3], ent[4], ent[5], quartile)
         sara_list_out.append(sara_tuple)
         print_index -= 1
 
@@ -516,10 +516,12 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
     text_overlay = text_overlay[0:max_y, 0:max_x]
     img = img[0:max_y, 0:max_x]
 
+    
     img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0, img)
 
     img[text_overlay > 128] = text_overlay[text_overlay > 128]
 
+    
     return img, sara_list_out
 
 
@@ -542,29 +544,30 @@ def generate_sara(tex, tex_segments):
     dict_scores = {}
 
     for segment in segments_scores:
-        dict_scores[segment[0]] = [segment[1], segment[2],
-                                   segment[3], segment[4], segment[5]]
+        # Index: score, entropy, sum, depth, centre-bias
+        dict_scores[segment[0]] = [segment[1], segment[2], segment[3], segment[4], segment[5]]
 
     # sorted_entropies = sorted(dict_entropies.items(),
     #                           key=operator.itemgetter(1), reverse=True)
+                              
 
     # sorted_scores = sorted(dict_scores.items(),
     #                           key=operator.itemgetter(1), reverse=True)
 
     # Sort by first value in value list
-    sorted_scores = sorted(dict_scores.items(),
-                           key=lambda x: x[1][0], reverse=True)
-
+    sorted_scores = sorted(dict_scores.items(), key=lambda x: x[1][0], reverse=True)
+    
     # flatten
-    sorted_scores = [[i[0], i[1][0], i[1][1], i[1]
-                      [2], i[1][3], i[1][4]] for i in sorted_scores]
+    sorted_scores = [[i[0], i[1][0], i[1][1], i[1][2], i[1][3], i[1][4]] for i in sorted_scores]
 
     # tex_out, sara_list_out = generate_heatmap(
     #     tex, 1, sorted_entropies, segments_coords)
 
     tex_out, sara_list_out = generate_heatmap(
         tex, 1, sorted_scores, segments_coords)
-
+    
+    sara_list_out = list(reversed(sara_list_out))
+    
     return tex_out, sara_list_out
 
 
@@ -622,3 +625,4 @@ def reset():
     gt_segments = []
     dws = []
     sara_list = []
+
