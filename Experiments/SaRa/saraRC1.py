@@ -162,6 +162,7 @@ def return_saliency(img, generator='itti', deepgaze_model=None, emlnet_models=No
     saliency_map = cv2.normalize(saliency_map, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8UC1)
 
     saliency_map = cv2.GaussianBlur(saliency_map, (31, 31), 10)
+    return saliency_map
     saliency_map = saliency_map // 16
     
     return saliency_map
@@ -506,7 +507,7 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
         cv2.putText(text_overlay, str(print_index), (x - 5, y),
                     font, .4, (255, 255, 255), 1, cv2.LINE_AA)
         
-        # rank, index, score, entropy, entropy_sum, centre_bias, depth, quartile
+        # Index, rank, score, entropy, entropy_sum, centre_bias, depth, quartile
         sara_tuple = (ent[0], print_index, ent[1], ent[2], ent[3], ent[4], ent[5], quartile)
         sara_list_out.append(sara_tuple)
         print_index -= 1
