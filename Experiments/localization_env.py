@@ -54,8 +54,8 @@ class ObjectLocalizationEnv(gym.Env):
 
         self.cumulative_reward += reward  # Update cumulative reward
 
-        if current_iou >= self.iou_threshold:
-            return self.get_state(), self.cumulative_reward, True, False, {}  # Stop if IoU threshold is reached
+        # if current_iou >= self.iou_threshold:
+        #     return self.get_state(), self.cumulative_reward, True, False, {}  # Stop if IoU threshold is reached
 
         observation = self.get_state()
         self.step_count += 1
@@ -109,6 +109,9 @@ class ObjectLocalizationEnv(gym.Env):
         return iou
 
     def calculate_reward(self, previous_iou, current_iou):
+        # Giving reward a boost if the IoU is above a threshold
+        if current_iou >= self.iou_threshold:
+            return 10 * (current_iou - previous_iou)
         return current_iou - previous_iou  # Reward based on IoU improvement
 
     def get_state(self):
@@ -121,7 +124,9 @@ class ObjectLocalizationEnv(gym.Env):
         features = self.vgg16(region)
         features = features.view(-1).detach().numpy()
 
-        state = (features, np.array(self.history_vector, dtype=np.float32))
+        # Encode the state as a vector of features and history
+        state = torch.cat((torch.tensor(features), torch.tensor(self.history_vector)))
+
         return state
 
     def check_valid_action(self, new_x1, new_y1, new_x2, new_y2):
