@@ -8,7 +8,7 @@ import torchvision.models as models
 import matplotlib.pyplot as plt
 
 class ObjectLocalizationEnv(gym.Env):
-    def __init__(self, image, target_box, max_steps=100, alpha=0.2, iou_threshold=0.9):
+    def __init__(self, image, target_box, max_steps=1000, alpha=0.2, iou_threshold=0.9):
         super(ObjectLocalizationEnv, self).__init__()
 
         self.image = image
@@ -115,6 +115,8 @@ class ObjectLocalizationEnv(gym.Env):
         return current_iou - previous_iou  # Reward based on IoU improvement
 
     def get_state(self):
+        # Use a bounding box in the state
+        # do not crop the image
         self.bbox = [int(i) for i in self.bbox]
         x1, y1, x2, y2 = self.bbox
 
