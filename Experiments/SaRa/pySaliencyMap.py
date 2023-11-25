@@ -117,7 +117,7 @@ class pySaliencyMap:
     def MFMGetFM(self, src):
         # convert scale
         I8U = np.uint8(255 * src)
-        cv2.waitKey(10)
+        # cv2.waitKey(10)
         # calculating optical flows
         if self.prev_frame is not None:
             farne_pyr_scale= pySaliencyMapDefs.farne_pyr_scale

@@ -429,21 +429,111 @@ def gen_blank_depth_weight(d_segments):
     return dws
 
 
+# def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
+#     '''
+#     Generates a heatmap overlay on the input image img based on the 
+#     provided sorted segment scores. The mode parameter determines the color 
+#     scheme of the heatmap. It returns the image with the heatmap overlay 
+#     and a list of segment scores.
+
+#     mode: 0 for white grid, 1 for color-coded grid
+#     '''
+
+#     font = cv2.FONT_HERSHEY_SIMPLEX
+#     # print_index = 0
+#     print_index = len(sorted_seg_scores) - 1
+#     set_value = int(0.25 * len(sorted_seg_scores))
+#     color = (0, 0, 0)
+
+#     max_x = 0
+#     max_y = 0
+
+#     overlay = np.zeros_like(img, dtype=np.uint8)
+#     text_overlay = np.zeros_like(img, dtype=np.uint8)
+
+#     sara_list_out = []
+
+#     for ent in reversed(sorted_seg_scores):
+#         quartile = 0
+#         if mode == 0:
+#             color = (255, 255, 255)
+#             t = 4
+#         elif mode == 1:
+#             if print_index + 1 <= set_value:
+#                 color = (0, 0, 255, 255)
+#                 t = 2
+#                 quartile = 1
+#             elif print_index + 1 <= set_value * 2:
+#                 color = (0, 128, 255, 192)
+#                 t = 4
+#                 quartile = 2
+#             elif print_index + 1 <= set_value * 3:
+#                 color = (0, 255, 255, 128)
+#                 t = 4
+#                 t = 6
+#                 quartile = 3
+#             # elif print_index + 1 <= set_value * 4:
+#             #     color = (0, 250, 0, 64)
+#             #     t = 8
+#             #     quartile = 4
+#             else:
+#                 color = (0, 250, 0, 64)
+#                 t = 8
+#                 quartile = 4
+
+
+#         x1 = segments_coords[ent[0]][1]
+#         y1 = segments_coords[ent[0]][2]
+#         x2 = segments_coords[ent[0]][3]
+#         y2 = segments_coords[ent[0]][4]
+
+#         if x2 > max_x:
+#             max_x = x2
+#         if y2 > max_y:
+#             max_y = y2
+
+#         x = int((x1 + x2) / 2)
+#         y = int((y1 + y2) / 2)
+
+
+
+#         # fill rectangle
+#         cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
+
+#         cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), 1)
+#         # put text in the middle of the rectangle
+        
+#         # white text
+#         cv2.putText(text_overlay, str(print_index), (x - 5, y),
+#                     font, .4, (255, 255, 255), 1, cv2.LINE_AA)
+        
+#         # Index, rank, score, entropy, entropy_sum, centre_bias, depth, quartile
+#         sara_tuple = (ent[0], print_index, ent[1], ent[2], ent[3], ent[4], ent[5], quartile)
+#         sara_list_out.append(sara_tuple)
+#         print_index -= 1
+
+#     # crop the overlay to up to x2 and y2
+#     overlay = overlay[0:max_y, 0:max_x]
+#     text_overlay = text_overlay[0:max_y, 0:max_x]
+#     img = img[0:max_y, 0:max_x]
+
+    
+#     img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0, img)
+
+#     img[text_overlay > 128] = text_overlay[text_overlay > 128]
+
+    
+#     return img, sara_list_out
 def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
     '''
-    Generates a heatmap overlay on the input image img based on the 
-    provided sorted segment scores. The mode parameter determines the color 
-    scheme of the heatmap. It returns the image with the heatmap overlay 
-    and a list of segment scores.
-
-    mode: 0 for white grid, 1 for color-coded grid
+    Generates a more vibrant heatmap overlay on the input image img based on the 
+    provided sorted segment scores. It returns the image with the heatmap overlay 
+    and a list of segment scores with quartile information.
     '''
 
     font = cv2.FONT_HERSHEY_SIMPLEX
-    # print_index = 0
     print_index = len(sorted_seg_scores) - 1
     set_value = int(0.25 * len(sorted_seg_scores))
-    color = (0, 0, 0)
 
     max_x = 0
     max_y = 0
@@ -453,34 +543,17 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
 
     sara_list_out = []
 
-    for ent in reversed(sorted_seg_scores):
-        quartile = 0
-        if mode == 0:
-            color = (255, 255, 255)
-            t = 4
-        elif mode == 1:
-            if print_index + 1 <= set_value:
-                color = (0, 0, 255, 255)
-                t = 2
-                quartile = 1
-            elif print_index + 1 <= set_value * 2:
-                color = (0, 128, 255, 192)
-                t = 4
-                quartile = 2
-            elif print_index + 1 <= set_value * 3:
-                color = (0, 255, 255, 128)
-                t = 4
-                t = 6
-                quartile = 3
-            # elif print_index + 1 <= set_value * 4:
-            #     color = (0, 250, 0, 64)
-            #     t = 8
-            #     quartile = 4
-            else:
-                color = (0, 250, 0, 64)
-                t = 8
-                quartile = 4
+    scores = [score[1] for score in sorted_seg_scores]
+    min_score = min(scores)
+    max_score = max(scores)
 
+    # Choose a colormap from matplotlib
+    colormap = plt.get_cmap('jet_r')  # 'jet', 'viridis', 'plasma', 'magma', 'cividis
+
+    for ent in reversed(sorted_seg_scores):
+        score = ent[1]
+        normalized_score = (score - min_score) / (max_score - min_score)
+        color = np.array(colormap(normalized_score)[:3]) * 255  # Get RGB values from colormap
 
         x1 = segments_coords[ent[0]][1]
         y1 = segments_coords[ent[0]][2]
@@ -495,36 +568,41 @@ def generate_heatmap(img, mode, sorted_seg_scores, segments_coords) -> tuple:
         x = int((x1 + x2) / 2)
         y = int((y1 + y2) / 2)
 
-
-
         # fill rectangle
         cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
-
         cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), 1)
-        # put text in the middle of the rectangle
-        
+
         # white text
         cv2.putText(text_overlay, str(print_index), (x - 5, y),
                     font, .4, (255, 255, 255), 1, cv2.LINE_AA)
-        
-        # Index, rank, score, entropy, entropy_sum, centre_bias, depth, quartile
+
+        # Determine quartile based on print_index
+        if print_index + 1 <= set_value:
+            quartile = 1
+        elif print_index + 1 <= set_value * 2:
+            quartile = 2
+        elif print_index + 1 <= set_value * 3:
+            quartile = 3
+        else:
+            quartile = 4
+
         sara_tuple = (ent[0], print_index, ent[1], ent[2], ent[3], ent[4], ent[5], quartile)
         sara_list_out.append(sara_tuple)
         print_index -= 1
 
-    # crop the overlay to up to x2 and y2
     overlay = overlay[0:max_y, 0:max_x]
     text_overlay = text_overlay[0:max_y, 0:max_x]
     img = img[0:max_y, 0:max_x]
 
-    
-    img = cv2.addWeighted(overlay, 0.3, img, 0.7, 0, img)
+    # Create a blank grayscale image with the same dimensions as the original image
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    img[text_overlay > 128] = text_overlay[text_overlay > 128]
+    gray = cv2.merge([gray, gray, gray])
 
-    
-    return img, sara_list_out
+    gray = cv2.addWeighted(overlay, 0.3, gray, 0.7, 0, gray)
+    gray[text_overlay > 128] = text_overlay[text_overlay > 128]
 
+    return gray, sara_list_out
 
 def generate_sara(tex, tex_segments):
     '''
