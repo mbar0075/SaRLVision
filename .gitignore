@@ -157,3 +157,7 @@ COTSDataset/
 
 # COCO DATASET https://cocodataset.org/#download
 COCODataset/
+dqn_model_1.pt
+dqn_model.pt
+*.avi
+*.mp4

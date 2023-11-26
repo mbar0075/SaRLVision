@@ -6,6 +6,7 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.models as models
 import matplotlib.pyplot as plt
+import mpl_toolkits.axes_grid1
 
 class ObjectLocalizationEnv(gym.Env):
     def __init__(self, image, original_image, target_box, max_steps=1000, alpha=0.2, iou_threshold=0.9, trigger_delay=10):
@@ -203,7 +204,7 @@ class ObjectLocalizationEnv(gym.Env):
         features = features.view(-1).detach().numpy()
 
         # Encode the state as a vector of bounding box and features and history
-        state = torch.cat((torch.tensor(features), bbox_tensor, torch.tensor(self.history_vector)))
+        state = torch.cat((bbox_tensor, torch.tensor(features), torch.tensor(self.history_vector)))
 
         return state
 
@@ -224,6 +225,74 @@ class ObjectLocalizationEnv(gym.Env):
         self.bbox = [0, 0, self.width, self.height]
         self.truncated = False
         return self.get_state()
+    
+    def plot_features(self, mode='single'):
+        if mode == 'multiple':
+            image = self.image.copy()
+            image = cv2.resize(image, (224, 224))
+            image = np.transpose(image, (2, 0, 1))  # Convert to (C, H, W) format
+
+            # Convert to PyTorch tensor
+            image_tensor = torch.from_numpy(image).float().unsqueeze(0)
+
+            # Forward pass through VGG16 to get activations of the final layer
+            activations = None
+            for layer in self.vgg16:
+                image_tensor = layer(image_tensor)
+                if layer.__class__.__name__ == 'ReLU':
+                    activations = image_tensor[0]  # Selecting the activations of the ReLU layer
+                    break
+
+            if activations is not None:
+                # Visualize multiple feature maps
+                num_maps = activations.size(0)
+                rows = np.floor(np.sqrt(num_maps)).astype(np.uint8)
+                cols = np.ceil(num_maps / rows).astype(np.uint8)
+
+                plt.figure(figsize=(15, 15))
+                for i in range(num_maps):
+                    plt.subplot(rows, cols, i + 1)
+                    activation_map = activations[i].detach().numpy()
+                    plt.imshow(activation_map, cmap='viridis')
+                    plt.axis('off')
+                    plt.title(f"Feature Map {i}")
+                plt.tight_layout()
+                plt.show()
+            else:
+                print("Failed to retrieve activations of the final layer")
+        else:
+            image = self.image.copy()
+            image = cv2.resize(image, (224, 224))
+            image = np.transpose(image, (2, 0, 1))  # Convert to (C, H, W) format
+
+            # Convert to PyTorch tensor
+            image_tensor = torch.from_numpy(image).float().unsqueeze(0)
+
+            # Forward pass through VGG16 to get activations of the final layer
+            activations = None
+            for layer in self.vgg16:
+                image_tensor = layer(image_tensor)
+                if layer.__class__.__name__ == 'ReLU':
+                    activations = image_tensor[0]  # Selecting the activations of the ReLU layer
+                    break
+
+            if activations is not None:
+                # Visualize the activations as an image
+                activations = activations.detach().numpy()
+                activations = np.mean(activations, axis=0)  # Aggregate across channels
+                plt.figure(figsize=(10, 7))
+                plt.imshow(activations, cmap='viridis')
+                plt.axis('off')
+                plt.title('Feature Activation Map (Final Layer)')
+                # Add a color bar which is the same height as the image
+                make_axes_locatable = mpl_toolkits.axes_grid1.make_axes_locatable
+                divider = make_axes_locatable(plt.gca())
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(cax=cax)
+                plt.show()
+            else:
+                print("Failed to retrieve activations of the final layer")
+
 
     def render(self, mode='image'):
         x1, y1, x2, y2 = self.bbox
