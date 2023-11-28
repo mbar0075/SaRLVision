@@ -18,7 +18,7 @@ class ObjectLocalizationEnv(gym.Env):
         self.height = image.shape[0]
         self.width = image.shape[1]
         self.observation_space = gym.spaces.Box(0, 1, shape=(3, 224, 224), dtype=np.float32)
-        self.action_space = gym.spaces.Discrete(5)
+        self.action_space = gym.spaces.Discrete(9)
         self.max_steps =self.width+self.height #max_steps
         self.step_count = 0
         self.alpha = alpha
@@ -27,6 +27,7 @@ class ObjectLocalizationEnv(gym.Env):
         self.iou_threshold = iou_threshold
         self.trigger_delay = trigger_delay
         self.history_vector = np.zeros(9, dtype=np.float32)
+        self.trigger_penalty = 0.0
 
         self.bbox = [0, 0, self.width, self.height]
 
@@ -46,21 +47,23 @@ class ObjectLocalizationEnv(gym.Env):
 
         previous_iou = self.calculate_iou(self.bbox, self.target_box)
 
-        if action < 4:  # Transformation actions
+        if action < 8:  # Transformation actions
             self.transform_box(action)
-        elif action == 4 and self.step_count >= self.trigger_delay:  # Trigger action after delay
+        # elif action == 8 and self.step_count >= self.trigger_delay:  # Trigger action after delay
+        elif action == 8:  # Trigger action after delay
             print("Trigger action")
             return self.get_state(), previous_iou, True, False, {}
 
         if self.truncated:
             print("Truncated")
-            return self.get_state(), -previous_iou, False, True, {}
+            return self.get_state(), previous_iou, False, True, {}
 
         current_iou = self.calculate_iou(self.bbox, self.target_box)
         reward = self.calculate_reward(previous_iou, current_iou)
 
         if self.truncated:
             print("Reward Truncated")
+            return self.get_state(), previous_iou, False, True, {}
 
         self.cumulative_reward += reward  # Update cumulative reward
         observation = self.get_state()
@@ -79,30 +82,30 @@ class ObjectLocalizationEnv(gym.Env):
 
     #     new_x1, new_y1, new_x2, new_y2 = x1, y1, x2, y2
 
-    #     if action == 0:  # Move X1 left
-    #         print("Move X1 left")
-    #         new_x1 = max(0, new_x1 - alpha_w)
-    #     elif action == 1:  # Move X1 right
-    #         print("Move X1 right")
-    #         new_x1 = min(self.width, new_x1 + alpha_w)
-    #     elif action == 2:  # Move X2 left
-    #         print("Move X2 left")
-    #         new_x2 = max(0, new_x2 - alpha_w)
-    #     elif action == 3:  # Move X2 right
-    #         print("Move X2 right")
-    #         new_x2 = min(self.width, new_x2 + alpha_w)
-    #     elif action == 4:  # Move Y1 up
-    #         print("Move Y1 up")
-    #         new_y1 = max(0, new_y1 - alpha_h)
-    #     elif action == 5:  # Move Y1 down
-    #         print("Move Y1 down")
-    #         new_y1 = min(self.height, new_y1 + alpha_h)
-    #     elif action == 6:  # Move Y2 up
-    #         print("Move Y2 up")
-    #         new_y2 = max(0, new_y2 - alpha_h)
-    #     elif action == 7:  # Move Y2 down
-    #         print("Move Y2 down")
-    #         new_y2 = min(self.height, new_y2 + alpha_h)
+        # if action == 0:  # Move X1 left
+        #     print("Move X1 left")
+        #     new_x1 = max(0, new_x1 - alpha_w)
+        # elif action == 1:  # Move X1 right
+        #     print("Move X1 right")
+        #     new_x1 = min(self.width, new_x1 + alpha_w)
+        # elif action == 2:  # Move X2 left
+        #     print("Move X2 left")
+        #     new_x2 = max(0, new_x2 - alpha_w)
+        # elif action == 3:  # Move X2 right
+        #     print("Move X2 right")
+        #     new_x2 = min(self.width, new_x2 + alpha_w)
+        # elif action == 4:  # Move Y1 up
+        #     print("Move Y1 up")
+        #     new_y1 = max(0, new_y1 - alpha_h)
+        # elif action == 5:  # Move Y1 down
+        #     print("Move Y1 down")
+        #     new_y1 = min(self.height, new_y1 + alpha_h)
+        # elif action == 6:  # Move Y2 up
+        #     print("Move Y2 up")
+        #     new_y2 = max(0, new_y2 - alpha_h)
+        # elif action == 7:  # Move Y2 down
+        #     print("Move Y2 down")
+        #     new_y2 = min(self.height, new_y2 + alpha_h)
 
     #     if self.check_valid_action(new_x1, new_y1, new_x2, new_y2):
     #         self.bbox = [new_x1, new_y1, new_x2, new_y2]
@@ -111,24 +114,40 @@ class ObjectLocalizationEnv(gym.Env):
     def transform_box(self, action):
         x1, y1, x2, y2 = self.bbox
          # Start with a large step then decay over time
-        alpha_w = int(10 / (1 + self.step_count / 100))  # Exponential decay for alpha_w
-        alpha_h = int(10 / (1 + self.step_count / 100))  # Exponential decay for alpha_h
+        # alpha_w = int(10 / (1 + self.step_count / 100))  # Exponential decay for alpha_w
+        # alpha_h = int(10 / (1 + self.step_count / 100))  # Exponential decay for alpha_h
+        alpha_w = int(self.alpha * (x2 - x1))
+        alpha_h = int(self.alpha * (y2 - y1))
 
-        if action == 0:  # Move X1 right
+        new_x1, new_y1, new_x2, new_y2 = x1, y1, x2, y2
+        
+        if action == 0:  # Move X1 left
+            # print("Move X1 left")
+            new_x1 = new_x1 - alpha_w
+        elif action == 1:  # Move X1 right
             # print("Move X1 right")
-            x1 = min(x1 + alpha_w, self.width - alpha_w)
-        elif action == 1:  # Move Y1 down
-            # print("Move Y1 down")
-            y1 = min(y1 + alpha_h, self.height - alpha_h)
+            new_x1 = new_x1 + alpha_w
         elif action == 2:  # Move X2 left
             # print("Move X2 left")
-            x2 = max(x2 - alpha_w, x1 + alpha_w)
-        elif action == 3:  # Move Y2 up
+            new_x2 = new_x2 - alpha_w
+        elif action == 3:  # Move X2 right
+            # print("Move X2 right")
+            new_x2 = new_x2 + alpha_w
+        elif action == 4:  # Move Y1 up
+            # print("Move Y1 up")
+            new_y1 = new_y1 - alpha_h
+        elif action == 5:  # Move Y1 down
+            # print("Move Y1 down")
+            new_y1 = new_y1 + alpha_h
+        elif action == 6:  # Move Y2 up
             # print("Move Y2 up")
-            y2 = max(y2 - alpha_h, y1 + alpha_h)
+            new_y2 = new_y2 - alpha_h
+        elif action == 7:  # Move Y2 down
+            # print("Move Y2 down")
+            new_y2 = new_y2 + alpha_h
 
         if self.check_valid_action(x1, y1, x2, y2):
-            self.bbox = [x1, y1, x2, y2]
+            self.bbox = [new_x1, new_y1, new_x2, new_y2]
         else:
             self.truncated = True
 
@@ -151,6 +170,7 @@ class ObjectLocalizationEnv(gym.Env):
         iou = intersection_area / (bbox_area + target_area - intersection_area)
         return iou
 
+
     def calculate_reward(self, previous_iou, current_iou):
         # Getting the coordinates of the bounding boxes
         x1, y1, x2, y2 = self.bbox
@@ -163,14 +183,14 @@ class ObjectLocalizationEnv(gym.Env):
         # Giving reward based on IoU improvement
         reward = current_iou - previous_iou
 
-        if bbox_area < target_area:
-                penalty = 0.5 * (target_area - bbox_area)  # Adjust the penalty factor as needed
+        # if bbox_area < target_area:
+        #         penalty = 0.5 * (target_area - bbox_area)  # Adjust the penalty factor as needed
                 
-                # Normalizing the penalty
-                penalty = min(penalty / target_area, 0.3)  # Adjust the divisor based on the range of your values
+        #         # Normalizing the penalty
+        #         penalty = min(penalty / target_area, 0.3)  # Adjust the divisor based on the range of your values
                 
-                reward -= penalty
-                self.truncated = True
+        #         reward -= penalty
+        #         self.truncated = True
 
         return reward
 
@@ -218,7 +238,13 @@ class ObjectLocalizationEnv(gym.Env):
             return False
         return True
 
-    def reset(self):
+    def reset(self, image=None, original_image=None, target_box=None):
+        if image is not None:
+            self.image = image
+        if original_image is not None:
+            self.original_image = original_image
+        if target_box is not None:
+            self.target_box = target_box
         self.step_count = 0
         self.cumulative_reward = 0
         self.history_vector = np.zeros(9, dtype=np.float32)
