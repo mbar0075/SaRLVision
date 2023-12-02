@@ -176,8 +176,11 @@ class pySaliencyMap:
                 lmin, lmax, dummy1, dummy2 = cv2.minMaxLoc(localimg)
                 lmaxmean += lmax
                 numlocal += 1
-        # averaging over all the local regions
-        return lmaxmean / numlocal
+        # averaging over all the local regions (error checking for numlocal)
+        if numlocal==0:
+            return 0
+        else:
+            return lmaxmean / numlocal
     ## normalization specific for the saliency map model
     def SMNormalization(self, src):
         dst = self.SMRangeNormalize(src)

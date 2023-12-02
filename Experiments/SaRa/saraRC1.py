@@ -532,7 +532,7 @@ def generate_heatmap(img, sorted_seg_scores, segments_coords, mode=2) -> tuple:
 
     mode: 0 for white grid, 1 for color-coded grid, 2 for heatmap to be used as a feature
     '''
-    alpha =0.5
+    alpha =0.3
     if mode == 2:
 
         font = cv2.FONT_HERSHEY_SIMPLEX

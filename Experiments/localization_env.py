@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.axes_grid1
 
 class ObjectLocalizationEnv(gym.Env):
-    def __init__(self, image, original_image, target_box, max_steps=1000, alpha=0.2, iou_threshold=0.9, trigger_delay=10):
+    def __init__(self, image, original_image, target_box, max_steps=500, alpha=0.2, iou_threshold=0.9, trigger_delay=10):
         super(ObjectLocalizationEnv, self).__init__()
 
         self.image = image
@@ -54,16 +54,16 @@ class ObjectLocalizationEnv(gym.Env):
             print("Trigger action")
             return self.get_state(), previous_iou, True, False, {}
 
-        if self.truncated:
-            print("Truncated")
-            return self.get_state(), previous_iou, False, True, {}
+        # if self.truncated:
+        #     print("Truncated")
+        #     return self.get_state(), previous_iou, False, True, {}
 
         current_iou = self.calculate_iou(self.bbox, self.target_box)
         reward = self.calculate_reward(previous_iou, current_iou)
 
-        if self.truncated:
-            print("Reward Truncated")
-            return self.get_state(), previous_iou, False, True, {}
+        # if self.truncated:
+        #     print("Reward Truncated")
+        #     return self.get_state(), previous_iou, False, True, {}
 
         self.cumulative_reward += reward  # Update cumulative reward
         observation = self.get_state()
