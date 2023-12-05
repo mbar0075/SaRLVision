@@ -54,16 +54,16 @@ class ObjectLocalizationEnv(gym.Env):
             print("Trigger action")
             return self.get_state(), previous_iou, True, False, {}
 
-        # if self.truncated:
-        #     print("Truncated")
-        #     return self.get_state(), previous_iou, False, True, {}
+        if self.truncated:
+            print("Truncated")
+            return self.get_state(), previous_iou, False, True, {}
 
         current_iou = self.calculate_iou(self.bbox, self.target_box)
         reward = self.calculate_reward(previous_iou, current_iou)
 
-        # if self.truncated:
-        #     print("Reward Truncated")
-        #     return self.get_state(), previous_iou, False, True, {}
+        if self.truncated:
+            print("Reward Truncated")
+            return self.get_state(), previous_iou, False, True, {}
 
         self.cumulative_reward += reward  # Update cumulative reward
         observation = self.get_state()
@@ -245,6 +245,8 @@ class ObjectLocalizationEnv(gym.Env):
             self.original_image = original_image
         if target_box is not None:
             self.target_box = target_box
+        self.width = self.image.shape[1]
+        self.height = self.image.shape[0]
         self.step_count = 0
         self.cumulative_reward = 0
         self.history_vector = np.zeros(9, dtype=np.float32)

@@ -797,3 +797,60 @@ def reset():
     dws = []
     sara_list = []
 
+
+
+def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.9):
+    def generate_segments(image, seg_count) -> dict:
+        segments = {}
+        segment_count = seg_count
+        index = 0
+
+        h, w = image.shape[:2]
+        w_interval = w // segment_count
+        h_interval = h // segment_count
+
+        for i in range(segment_count):
+            for j in range(segment_count):
+                x1, y1 = j * w_interval, i * h_interval
+                x2, y2 = x1 + w_interval, y1 + h_interval
+                segments[index] = (x1, y1, x2, y2)
+                index += 1
+
+        return segments
+
+    sara_dict = {
+        info[0]: {
+            'score': info[2],
+            'index': info[1]
+        }
+        for info in sara_info[1]
+    }
+
+    sorted_sara_dict = sorted(sara_dict.items(), key=lambda item: item[1]['score'], reverse=True)
+
+    index_info = generate_segments(img, grid_size)
+
+    most_imp_ranks = np.zeros_like(img)
+
+    max_rank = int(grid_size * grid_size * rate)
+    count = 0
+    important_coords = []
+
+    for rank, info in sorted_sara_dict:
+        if count >= max_rank:
+            break
+
+        coords = index_info[info['index']]
+        most_imp_ranks[coords[1]:coords[3], coords[0]:coords[2]] = 255
+        important_coords.append(coords)
+        count += 1
+
+    if not important_coords:
+        return img
+
+    # Find bounding box of important segments
+    important_coords = np.array(important_coords)
+    x0, y0 = important_coords.min(axis=0)[:2]
+    x1, y1 = important_coords.max(axis=0)[:2] + 1
+    cropped_img = img[x0:x1, y0:y1]
+    return cropped_img
