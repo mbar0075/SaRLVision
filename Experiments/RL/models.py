@@ -13,8 +13,8 @@ class VGG16FeatureExtractor(nn.Module):
         super(VGG16FeatureExtractor, self).__init__()
         vgg16 = torchvision.models.vgg16(pretrained=True)# Loading the pretrained model
         vgg16.eval() # Setting the model in evaluation mode to not do dropout.
-        self.features = list(vgg16.children())[0] # Getting the features of the model
-        self.classifier = nn.Sequential(*list(vgg16.classifier.children())[:-2]) # Getting the classifier of the model
+        self.features = list(vgg16.children())[0] # Retrieving the first child of the model, which is typically the feature extraciton part of the model
+        self.classifier = nn.Sequential(*list(vgg16.classifier.children())[:-2]) # Retrieving the classifier part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x)
         return x
