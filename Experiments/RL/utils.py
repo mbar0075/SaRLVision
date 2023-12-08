@@ -1,24 +1,32 @@
+import torch
 import random
 from collections import namedtuple
+
+# Setting the device to cuda if cuda is available.
+use_cuda = True
+FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
+LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
+ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
+Tensor = FloatTensor
 
 SAVE_MODEL_PATH = "Experiments/RL/models/"
 
 Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
 
 
-class ReplayMemory(object):
+class ReplayBuffer(object):
     """
-        Replay Memory that stores the transitions that the agent observes.
+        Replay Buffer that stores the transitions that the agent observes.
     
     """
     def __init__(self, capacity):
         """
-            Constructor of the ReplayMemory class.
+            Constructor of the ReplayBuffer class.
         
             Args:
-                capacity: The capacity of the ReplayMemory.
-                memory: The memory of the ReplayMemory.
-                position: The position of the ReplayMemory.
+                capacity: The capacity of the ReplayBuffer.
+                memory: The memory of the ReplayBuffer.
+                position: The position of the ReplayBuffer.
 
         """
         self.capacity = capacity

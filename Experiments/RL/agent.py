@@ -36,7 +36,7 @@ class Agent():
           self.policy_net = self.policy_net.cuda()
         
         self.optimizer = optim.Adam(self.policy_net.parameters(),lr=1e-6)
-        self.memory = ReplayMemory(10000)
+        self.memory = ReplayBuffer(10000)
         self.steps_done = 0
         self.episode_durations = []
         
