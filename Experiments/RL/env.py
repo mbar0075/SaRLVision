@@ -167,7 +167,7 @@ class DetectionEnv(gym.Env):
         features = features.view(1, -1)
 
         # Flattenning the action history.
-        action_history = self.actions_history.view(1,-1).type(dtype)
+        action_history = torch.FloatTensor(self.actions_history).flatten().view(1, -1)
 
         # Concatenating the features and the action history.
         state = torch.cat((features, action_history), 1)
@@ -317,7 +317,7 @@ class DetectionEnv(gym.Env):
             'recall': recall(self.bbox, self.target_box),
         }
     
-    def reset(self, image, original_image, target_box, max_steps=500, alpha=0.2, nu=3.0, threshold=0.5, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
+    def reset(self, image=None, original_image=None, target_box=None, max_steps=500, alpha=0.2, nu=3.0, threshold=0.5, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
         """
             Function that resets the environment.
 
@@ -336,11 +336,14 @@ class DetectionEnv(gym.Env):
                 - State of the environment
         """
         # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
-        self.image = image
-        self.original_image = original_image
-        self.target_box = target_box
-        self.height = image.shape[0]
-        self.width = image.shape[1]
+        if image is not None:
+            self.image = image
+            self.height = image.shape[0]
+            self.width = image.shape[1]
+        if original_image is not None:
+            self.original_image = original_image
+        if target_box is not None:
+            self.target_box = target_box
         self.target_size = target_size
         
         # Initializing the maximum number of steps, the current step, the scaling factor of the reward, the reward of the trigger, the cumulative reward, the threshold, the actions history and the number of episodes.
