@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from torch.autograd import Variable
 from utils import *
 from models import *
 
@@ -19,7 +18,7 @@ class DetectionEnv(gym.Env):
                 - Target bounding box
                 - Maximum number of steps
                 - Alpha
-                - Nu
+                - Nu (Reward of trigger)
                 - Threshold
                 - Feature extractor
                 - Target size
@@ -470,7 +469,7 @@ class DetectionEnv(gym.Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(image)
+                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(self.cumulative_reward))
 
             # Returning the image.
             return image
@@ -483,7 +482,7 @@ class DetectionEnv(gym.Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(image)
+                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(self.cumulative_reward))
 
             # Returning the image.
             return image
@@ -499,12 +498,12 @@ class DetectionEnv(gym.Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(heatmap)
+                self.plot_img(heatmap, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(self.cumulative_reward))
 
             # Returning the image.
             return heatmap
         
-    def plot_img(self, image):
+    def plot_img(self, image, title=None):
         """
             Function that plots the image.
 
@@ -515,6 +514,8 @@ class DetectionEnv(gym.Env):
         plt.figure(figsize=(10, 7))
         plt.imshow(image, cmap='gray')
         plt.axis('off')
+        if title is not None:
+            plt.title(title)
         plt.show()
         
     def close(self):

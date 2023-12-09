@@ -1,6 +1,6 @@
 import torch
 import random
-from collections import namedtuple
+from collections import namedtuple, deque
 
 # Setting the device to cuda if cuda is available.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -8,58 +8,53 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Defining use_cuda as True if cuda is available, False otherwise.
 use_cuda = torch.cuda.is_available()
 
+# Printing the device
+if use_cuda:
+    print("CUDA is available! Using GPU for computations.")
+
 # Defining the types of tensors that we will be using throughout the project.
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
 Tensor = FloatTensor
 
-SAVE_MODEL_PATH = "Experiments/RL/models/"
+FloatDType = torch.float32
+LongDType = torch.long
+
+SAVE_MODEL_PATH = "models/"
 
 Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
 
-
+    
 class ReplayBuffer(object):
     """
         Replay Buffer that stores the transitions that the agent observes.
-    
+
     """
     def __init__(self, capacity):
         """
             Constructor of the ReplayBuffer class.
-        
+
             Args:
                 capacity: The capacity of the ReplayBuffer.
                 memory: The memory of the ReplayBuffer.
-                position: The position of the ReplayBuffer.
 
         """
         self.capacity = capacity
-        self.memory = []
-        self.position = 0
+        self.memory = deque(maxlen=capacity)
 
     def push(self, *args):
         """Save a transition."""
-        # If the memory is not full, we append the transition.
-        if len(self.memory) < self.capacity:
-            self.memory.append(None)
-
-        # Saving the transition at the current position.
-        self.memory[self.position] = Transition(*args)
-
-        # Incrementing the position.
-        self.position = (self.position + 1) % self.capacity
+        self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
         """Sampling a batch of transitions."""
-        # Returning a batch of random transitions.
+        batch_size = min(batch_size, len(self.memory))
         return random.sample(self.memory, batch_size)
 
     def __len__(self):
         """Returning the length of the memory."""
         return len(self.memory)
-    
-
 
 
 def iou(bbox1, target_bbox):

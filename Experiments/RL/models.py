@@ -98,17 +98,34 @@ def transform_input(image, target_size):
 """
     Architecture of the DQN model.
 """
+# class DQN(nn.Module):
+#     def __init__(self, h, w, outputs):
+#         super(DQN, self).__init__()# Defining the layers of the model
+#         self.classifier = nn.Sequential(
+#             nn.Linear( in_features= 81 + 25088, out_features=1024),
+#             nn.ReLU(),
+#             nn.Dropout(0.2),
+#             nn.Linear( in_features= 1024, out_features=1024),
+#             nn.ReLU(),
+#             nn.Dropout(0.2),
+#             nn.Linear( in_features= 1024, out_features=9)
+#         )
+#     def forward(self, x):
+#         return self.classifier(x)
+
 class DQN(nn.Module):
-    def __init__(self, h, w, outputs):
-        super(DQN, self).__init__()# Defining the layers of the model
+    def __init__(self, input_size, output_size):
+        super(DQN, self).__init__()        
+        # Define the layers of the model based on the input size and output size
         self.classifier = nn.Sequential(
-            nn.Linear( in_features= 81 + 25088, out_features=1024),
+            nn.Linear(input_size, 1024),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear( in_features= 1024, out_features=1024),
+            nn.Linear(1024, 1024),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear( in_features= 1024, out_features=9)
+            nn.Linear(1024, output_size)  # 'output_size' denotes the number of output actions
         )
+
     def forward(self, x):
         return self.classifier(x)
