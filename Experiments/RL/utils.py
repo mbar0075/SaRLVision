@@ -3,7 +3,12 @@ import random
 from collections import namedtuple
 
 # Setting the device to cuda if cuda is available.
-use_cuda = True
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Defining use_cuda as True if cuda is available, False otherwise.
+use_cuda = torch.cuda.is_available()
+
+# Defining the types of tensors that we will be using throughout the project.
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor

@@ -53,14 +53,13 @@ class DetectionEnv(gym.Env):
         self.action_space = gym.spaces.Discrete(9)
 
         # Initializing the observation space.
-        # Calculating the size of the feature vector and the history vector.
-        feature_len = self.get_features(self.image).shape[0]
-        history_len = len(self.actions_history)
+        # Calculating the size of the state vector.
+        state = self.get_state()
         # The observation space will be the features of the image concatenated with the history of the actions (size of the feature vector + size of the history vector).
         self.observation_space = gym.spaces.Box(
-            low=0,
-            high=1,
-            shape=(feature_len + history_len,),
+            low=0.0,
+            high=100.0, # Since the values of the features are between 0 and 100.
+            shape=(state.shape[1],),
             dtype=np.float32
         )
 
@@ -77,7 +76,7 @@ class DetectionEnv(gym.Env):
         self.truncated = False
         self.threshold = threshold
 
-    def calculate_reward(current_state, previous_state, target_box, reward_function=iou):
+    def calculate_reward(self, current_state, previous_state, target_box, reward_function=iou):
         """
             Calculating the reward.
 
@@ -186,19 +185,17 @@ class DetectionEnv(gym.Env):
                 - History of the actions
         """
         # Creating the action vector.
-        action_vector = torch.zeros(9)
-
-        # Setting the action vector.
+        action_vector = [0] * 9
         action_vector[action] = 1
 
-        # Retrieving the size of the history vector.
-        size_history_vector = len(torch.nonzero(self.actions_history))
+        # Retrieving the size of the history list.
+        size_history_list = len(self.actions_history)
 
-        # If the size of the history vector is smaller than 9, we add the action vector to the history vector.
-        if size_history_vector < 9:
-            self.actions_history[size_history_vector][action] = 1
+        # If the size of the history list is smaller than 9, we add the action vector to the history vector.
+        if size_history_list < 9:
+            self.actions_history[size_history_list][action] = 1
         else:
-            # Else we shift the history vector by one and we add the action vector to the history vector.
+            # Else we shift the history list by one and we add the action vector to the history vector.
             for i in range(8,0,-1):
                 self.actions_history[i][:] = self.actions_history[i-1][:]
             self.actions_history[0][:] = action_vector[:]
@@ -234,8 +231,8 @@ class DetectionEnv(gym.Env):
         xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
 
         # Calculating the alpha_h and alpha_w mentioned in the paper.
-        alpha_h = self.alpha * (  ymax - ymin )
-        alpha_w = self.alpha * (  xmax - xmin )
+        alpha_h = int(self.alpha * (  ymax - ymin ))
+        alpha_w = int(self.alpha * (  xmax - xmin ))
 
         # If the action is 0, we move the bounding box to the right.
         if action == 0:
@@ -276,6 +273,22 @@ class DetectionEnv(gym.Env):
 
         # Returning the bounding box, whilst ensuring that the bounding box is within the image.
         return [self.rewrap(xmin, self.width), self.rewrap(ymin, self.height), self.rewrap(xmax, self.width), self.rewrap(ymax, self.height)]
+    
+    def get_actions(self):
+        """
+            Function that prints the name of the actions.
+        """
+        print('\033[1m' + "Actions:" + '\033[0m')
+        print('\033[31m' + "0: Move right → " + '\033[0m')
+        print('\033[32m' + "1: Move left ←" + '\033[0m')
+        print('\033[33m' + "2: Move up ↑" + '\033[0m')
+        print('\033[34m' + "3: Move down ↓" + '\033[0m')
+        print('\033[35m' + "4: Make bigger +" + '\033[0m')
+        print('\033[36m' + "5: Make smaller -" + '\033[0m')
+        print('\033[37m' + "6: Make fatter W" + '\033[0m')
+        print('\033[38m' + "7: Make taller H" + '\033[0m')
+        print('\033[1m' + "8: Trigger T" + '\033[0m')
+        pass
 
     def rewrap(self, coordinate, size):
         """
@@ -367,8 +380,8 @@ class DetectionEnv(gym.Env):
         self.feature_extractor = feature_extractor
         self.transform = transform_input(self.image, target_size)
 
-        # Returning the state of the environment.
-        return self.get_state()
+        # Returning the observation space.
+        return self.observation_space, {}
     
     def step(self, action):
         """
@@ -388,13 +401,28 @@ class DetectionEnv(gym.Env):
 
         # Declaring the reward.
         reward = 0
-
+        
         # Checking the action type and applying the action to the image (transform action).
         if action < 8:
+            # Retrieving the previous state
+            previous_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
+
+            # Applying the action to the image.
             self.bbox = self.transform_action(action)
-            reward = self.calculate_reward(self.bbox, self.target_box)
+
+            # Retrieving the current state.
+            current_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
+
+            # Calculating the reward.
+            reward = self.calculate_reward(current_state, previous_state, self.target_box)
         else:
-            reward = self.calculate_trigger_reward(self.bbox, self.target_box)
+            # Retrieving the current state.
+            current_state = self.bbox
+
+            # Calculating the reward.
+            reward = self.calculate_trigger_reward(current_state, self.target_box)
+
+            # Setting the episode to be terminated.
             self.terminated = True
 
         # Calculating the cumulative reward.
@@ -403,8 +431,8 @@ class DetectionEnv(gym.Env):
         # Incrementing the step count.
         self.step_count += 1
 
-        # Checking if the episode is finished or truncated.
-        if not self.terminated or not self.truncated:
+        # Checking if the episode is finished and truncated.
+        if not self.terminated and not self.truncated:
             # Checking if the episode is finished.
             self.terminated = self.step_count >= self.max_steps
 
