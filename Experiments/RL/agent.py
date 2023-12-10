@@ -15,7 +15,7 @@ class DQNAgent(object):
     """
         DQN Agent class.
     """
-    def __init__(self, input_size, output_size, replay_buffer_size=10000, batch_size=32, gamma=0.99,
+    def __init__(self, input_size, output_size, replay_buffer_size=100, batch_size=64, gamma=0.99,
                  epsilon_start=1.0, epsilon_final=0.0001, epsilon_decay=0.999, target_update=10, learning_rate=1e-5, save_path="DQN_models/"):
         """
             Constructor of the DQNAgent class.
@@ -92,7 +92,7 @@ class DQNAgent(object):
             with torch.no_grad():
                 # Selecting the action with the highest Q-value
                 q_values = self.policy_net(state)
-                action = q_values.argmax(dim=1).item()  # Get the index of the maximum Q-value as the action
+                action = q_values.squeeze().argmax().item()  # Get the index of the maximum Q-value as the action
         else:
             # Selecting a random action
             action = random.randrange(self.output_size)
@@ -107,8 +107,10 @@ class DQNAgent(object):
             Formula:
                 ε = ε_final + (ε_start - ε_final) * exp(-1. * step / ε_decay)
         """
-        self.epsilon = self.epsilon_final + (self.epsilon_start - self.epsilon_final) * \
-                       math.exp(-1. * self.step_count / self.epsilon_decay)
+        # self.epsilon = self.epsilon_final + (self.epsilon_start - self.epsilon_final) * \
+        #                math.exp(-1. * self.step_count / self.epsilon_decay)
+        
+        self.epsilon = max((self.epsilon*self.epsilon_decay, self.epsilon_final))
         
     def update(self):
         """
@@ -116,6 +118,7 @@ class DQNAgent(object):
         """
         # Checking if the replay buffer contains enough samples
         if len(self.replay_buffer) < self.batch_size:
+            # print("Not enough samples in the replay buffer.")
             return
 
         # Increasing the step count
@@ -131,17 +134,23 @@ class DQNAgent(object):
         batch = Transition(*zip(*transitions))
 
         # Converting each element of the batch to a Torch tensor
-        print(batch.state)
-        state_batch = torch.tensor(batch.state, device=self.device, dtype=FloatDType)
-        action_batch = torch.tensor(batch.action, device=self.device, dtype=LongDType).unsqueeze(1)
-        reward_batch = torch.tensor(batch.reward, device=self.device, dtype=FloatDType)
-        next_state_batch = torch.tensor(batch.next_state, device=self.device, dtype=FloatDType)
+        state_batch = torch.stack(batch.state).squeeze(1).to(self.device)
+        action_batch = torch.tensor(batch.action, dtype=LongDType).unsqueeze(1).view(-1, 1).to(self.device)
+        reward_batch = torch.tensor(batch.reward, dtype=FloatDType).unsqueeze(1).view(-1, 1).to(self.device)
+        done_batch = torch.tensor(batch.done, dtype=BoolDType).unsqueeze(1).view(-1, 1).to(self.device)
+        next_state_batch = torch.stack(batch.next_state).squeeze(1).to(self.device)
 
         # Calculating the Q-values for the current states
         q_values = self.policy_net(state_batch).gather(1, action_batch)
 
         # Calculating the Q-values for the next states
-        next_q_values = self.target_net(next_state_batch).max(1)[0].detach()
+        next_q_values = torch.zeros(self.batch_size, device=self.device, dtype=FloatDType)
+        non_terminal_mask = torch.squeeze(torch.logical_not(done_batch), dim=1)
+        non_terminal_next_states = next_state_batch[non_terminal_mask]
+
+        if len(non_terminal_next_states) > 0:
+            non_terminal_next_q_values = self.target_net(non_terminal_next_states).max(1)[0].detach()
+            next_q_values[non_terminal_mask] = non_terminal_next_q_values
 
         # Calculating the expected Q-values
         expected_q_values = reward_batch + (self.gamma * next_q_values)
@@ -151,12 +160,14 @@ class DQNAgent(object):
 
         # Backpropagating the loss
         self.optimizer.zero_grad()
-        loss.backward()
+        loss.backward(retain_graph=True)
         self.optimizer.step()
 
         # Updating the target network, copying all weights and biases in DQN
         if self.step_count % self.target_update == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
+
+        del state_batch, action_batch, reward_batch, done_batch, next_state_batch, q_values, next_q_values, \
 
     def save_network(self):
         """

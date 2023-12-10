@@ -6,9 +6,20 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from utils import *
 from models import *
+import time
+import math
+
+ACTION_HISTORY = [[100]*9]*10
+NU = 10.0
+THRESHOLD = 0.4
+MAX_THRESHOLD = 1.0
+GROWTH_RATE = 0.0009
+ALPHA = 0.2
+MAX_STEPS = 100
+RENDER_MODE = None
 
 class DetectionEnv(gym.Env):
-    def __init__(self, image, original_image, target_box, max_steps=500, alpha=0.2, nu=3.0, threshold=0.5, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
+    def __init__(self, image, original_image, target_bbox, render_mode=RENDER_MODE, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
         """
             Constructor of the DetectionEnv class.
 
@@ -30,7 +41,7 @@ class DetectionEnv(gym.Env):
         # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
         self.image = image
         self.original_image = original_image
-        self.target_box = target_box
+        self.target_bbox = target_bbox
         self.height = image.shape[0]
         self.width = image.shape[1]
         self.target_size = target_size
@@ -38,7 +49,7 @@ class DetectionEnv(gym.Env):
         # Initializing the actions history and the number of episodes.
         self.actions_history = []
         self.num_episodes = 0
-        self.actions_history += [[100]*9]*20
+        self.actions_history += ACTION_HISTORY
 
         # Initializing the bounding box of the image.
         self.bbox = [0, 0, self.width, self.height]
@@ -74,8 +85,10 @@ class DetectionEnv(gym.Env):
         self.cumulative_reward = 0
         self.truncated = False
         self.threshold = threshold
+        self.max_threshold = MAX_THRESHOLD
+        self.growth_rate = GROWTH_RATE
 
-    def calculate_reward(self, current_state, previous_state, target_box, reward_function=iou):
+    def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=iou):
         """
             Calculating the reward.
 
@@ -89,10 +102,10 @@ class DetectionEnv(gym.Env):
                 - Reward
         """
         # Calculating the IoU between the current state and the target bounding box.
-        iou_current = reward_function(current_state, target_box)
+        iou_current = reward_function(current_state, target_bbox)
 
         # Calculating the IoU between the previous state and the target bounding box.
-        iou_previous = reward_function(previous_state, target_box)
+        iou_previous = reward_function(previous_state, target_bbox)
 
         # Calculating the reward.
         reward = iou_current - iou_previous
@@ -104,7 +117,7 @@ class DetectionEnv(gym.Env):
         # Returning 1.
         return 1
     
-    def calculate_trigger_reward(self, current_state, target_box, reward_function=iou):
+    def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
         """
             Calculating the reward.
 
@@ -117,17 +130,33 @@ class DetectionEnv(gym.Env):
                 - Reward
         """
         # Calculating the IoU between the current state and the target bounding box.
-        iou_current = reward_function(current_state, target_box)
+        iou_current = reward_function(current_state, target_bbox)
 
         # Calculating the reward.
         reward = iou_current
 
+        # Updating the threshold.
+        # self.update_threshold()
+
         # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
         if reward >= self.threshold:
-            return self.nu
+            return self.nu*abs(reward)
         
         # Returning -1*trigger reward.
         return -1*self.nu
+    
+    def update_threshold(self):
+        """
+            Updating the threshold.
+        
+            Formula:
+                threshold = max_threshold - (max_threshold / (1.0 + exp(growth_rate * num_episodes)))
+        """
+        # Calculating the new threshold, by growing the threshold.
+        self.threshold = self.max_threshold - (self.max_threshold / (1.0 + math.exp(self.growth_rate * self.num_episodes)))
+
+        # Clipping the threshold.
+        self.threshold = min(self.threshold, self.max_threshold)
     
     def get_features(self, image, dtype=FloatTensor):
         """
@@ -148,24 +177,33 @@ class DetectionEnv(gym.Env):
         # Returning the features.
         return features
 
-    def get_state(self, dtype=FloatTensor):
+    def get_state(self, dtype=FloatDType):
         """
             Getting the state of the environment.
 
             Output:
                 - State of the environment
         """
+        #----------------------------------------------
+        # Drawing the bounding box on the image.
+        xmin, ymin, xmax, ymax = self.bbox
+        image = self.original_image.copy()
+
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)
+
+        image = transform_input(image, target_size=self.target_size)
+        #----------------------------------------------
         # Transforming the image.
-        image = transform_input(self.image, target_size=self.target_size)
+        # image = transform_input(self.image, target_size=self.target_size)
 
         # Retrieving the features of the image.
         features = self.get_features(image)
 
         # Transposing the features.
-        features = features.view(1, -1)
+        features = features.view(1, -1).detach()
 
         # Flattenning the action history.
-        action_history = torch.FloatTensor(self.actions_history).flatten().view(1, -1)
+        action_history = torch.tensor(self.actions_history, dtype=dtype).flatten().view(1, -1)
 
         # Concatenating the features and the action history.
         state = torch.cat((features, action_history), 1)
@@ -176,6 +214,8 @@ class DetectionEnv(gym.Env):
     def update_history(self, action):
         """
             Function that updates the history of the actions by adding the last one.
+            It is creating a history vector of size 9, where each element is 0 except the one corresponding to the action performed.
+            It is then shifting the history vector by one and adding the new action vector to the history vector.
 
             Input:
                 - Last action performed
@@ -289,6 +329,45 @@ class DetectionEnv(gym.Env):
         print('\033[1m' + "8: Trigger T" + '\033[0m')
         pass
 
+    def decode_action(self, action):
+        """
+            Function that decodes the action.
+
+            Input:
+                - Action to decode
+
+            Output:
+                - Decoded action
+        """
+        # If the action is 0, we print the name of the action.
+        if action == 0:
+            print('\033[31m' + "Move right →" + '\033[0m')
+        # If the action is 1, we print the name of the action.
+        elif action == 1:
+            print('\033[32m' + "Move left ←" + '\033[0m')
+        # If the action is 2, we print the name of the action.
+        elif action == 2:
+            print('\033[33m' + "Move up ↑" + '\033[0m')
+        # If the action is 3, we print the name of the action.
+        elif action == 3:
+            print('\033[34m' + "Move down ↓" + '\033[0m')
+        # If the action is 4, we print the name of the action.
+        elif action == 4:
+            print('\033[35m' + "Make bigger +" + '\033[0m')
+        # If the action is 5, we print the name of the action.
+        elif action == 5:
+            print('\033[36m' + "Make smaller -" + '\033[0m')
+        # If the action is 6, we print the name of the action.
+        elif action == 6:
+            print('\033[37m' + "Make fatter W" + '\033[0m')
+        # If the action is 7, we print the name of the action.
+        elif action == 7:
+            print('\033[38m' + "Make taller H" + '\033[0m')
+        # If the action is 8, we print the name of the action.
+        elif action == 8:
+            print('\033[1m' + "Trigger T" + '\033[0m')
+        pass
+
     def rewrap(self, coordinate, size):
         """
             Function that rewrap the coordinate if it is out of the image.
@@ -310,7 +389,7 @@ class DetectionEnv(gym.Env):
                 - Information of the environment
         """
         return {
-            'target_box': self.target_box,
+            'target_bbox': self.target_bbox,
             'height': self.height,
             'width': self.width,
             'target_size': self.target_size,
@@ -325,15 +404,17 @@ class DetectionEnv(gym.Env):
             'bbox': self.bbox,
             'feature_extractor': self.feature_extractor,
             'transform': self.transform,
-            'iou': iou(self.bbox, self.target_box),
-            'recall': recall(self.bbox, self.target_box),
+            'iou': iou(self.bbox, self.target_bbox),
+            'recall': recall(self.bbox, self.target_bbox),
+            'threshold': self.threshold,
         }
     
-    def reset(self, image=None, original_image=None, target_box=None, max_steps=500, alpha=0.2, nu=3.0, threshold=0.5, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
+    def reset(self, seed=None, options=None, image=None, original_image=None, target_bbox=None, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
         """
             Function that resets the environment.
 
             Input:
+                - Seed
                 - Image
                 - Original image
                 - Target bounding box
@@ -347,6 +428,7 @@ class DetectionEnv(gym.Env):
             Output:
                 - State of the environment
         """
+        super().reset(seed=seed)
         # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
         if image is not None:
             self.image = image
@@ -354,8 +436,8 @@ class DetectionEnv(gym.Env):
             self.width = image.shape[1]
         if original_image is not None:
             self.original_image = original_image
-        if target_box is not None:
-            self.target_box = target_box
+        if target_bbox is not None:
+            self.target_bbox = target_bbox
         self.target_size = target_size
         
         # Initializing the maximum number of steps, the current step, the scaling factor of the reward, the reward of the trigger, the cumulative reward, the threshold, the actions history and the number of episodes.
@@ -365,12 +447,12 @@ class DetectionEnv(gym.Env):
         self.nu = nu # Reward of Trigger
         self.cumulative_reward = 0
         self.truncated = False
+        self.terminated = False
         self.threshold = threshold
 
         # Initializing the actions history and the number of episodes.
         self.actions_history = []
-        self.num_episodes = 0
-        self.actions_history += [[100]*9]*20
+        self.actions_history += ACTION_HISTORY
 
         # Initializing the bounding box of the image.
         self.bbox = [0, 0, self.width, self.height]
@@ -380,7 +462,7 @@ class DetectionEnv(gym.Env):
         self.transform = transform_input(self.image, target_size)
 
         # Returning the observation space.
-        return self.observation_space, {}
+        return self.get_state(), {}
     
     def step(self, action):
         """
@@ -413,13 +495,13 @@ class DetectionEnv(gym.Env):
             current_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
 
             # Calculating the reward.
-            reward = self.calculate_reward(current_state, previous_state, self.target_box)
+            reward = self.calculate_reward(current_state, previous_state, self.target_bbox)
         else:
             # Retrieving the current state.
             current_state = self.bbox
 
             # Calculating the reward.
-            reward = self.calculate_trigger_reward(current_state, self.target_box)
+            reward = self.calculate_trigger_reward(current_state, self.target_bbox)
 
             # Setting the episode to be terminated.
             self.terminated = True
@@ -431,12 +513,9 @@ class DetectionEnv(gym.Env):
         self.step_count += 1
 
         # Checking if the episode is finished and truncated.
-        if not self.terminated and not self.truncated:
-            # Checking if the episode is finished.
-            self.terminated = self.step_count >= self.max_steps
-
-            # Checking if the episode is truncated.
-            self.truncated = self.step_count >= self.max_steps
+        if self.step_count >= self.max_steps:
+            self.terminated = True
+            self.truncated = False
 
         # If the episode is finished, we increment the number of episodes.
         if self.terminated or self.truncated:
@@ -445,7 +524,10 @@ class DetectionEnv(gym.Env):
         # Returning the state of the environment, the reward, whether the episode is finished or not, whether the episode is truncated or not and the information of the environment.
         return self.get_state(), reward, self.terminated, self.truncated, self.get_info()
     
-    def render(self, mode='image', do_display=False):
+    def render(self, mode='human'):
+        pass
+    
+    def show(self, mode='image', do_display=False):
         """
             Function that renders the environment.
 
@@ -524,26 +606,3 @@ class DetectionEnv(gym.Env):
         """
         gym.Env.close(self)
         pass
-
-    # def resize_bbox(bbox, size):
-    #     """
-    #         Function that resizes the bounding box.
-
-    #         Input:
-    #             - Bounding box
-    #             - Size of the image
-
-    #         Output:
-    #             - Resized bounding box
-    #     """
-    #     # Retrieving the coordinates of the bounding box.
-    #     xmin, ymin, xmax, ymax = bbox[0], bbox[1], bbox[2], bbox[3]
-
-    #     # Calculating the new coordinates of the bounding box.
-    #     xmin = int(xmin * size[0])
-    #     ymin = int(ymin * size[1])
-    #     xmax = int(xmax * size[0])
-    #     ymax = int(ymax * size[1])
-
-    #     # Returning the new bounding box.
-    #     return [xmin, ymin, xmax, ymax]

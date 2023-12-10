@@ -24,7 +24,7 @@ class VGG16FeatureExtractor(nn.Module):
         vgg16_model.eval() # Setting the model in evaluation mode to not do dropout.
         self.features = list(vgg16_model.children())[0] # Retrieving the first child of the model, which is typically the feature extraciton part of the model
         self.classifier = nn.Sequential(*list(vgg16_model.classifier.children())[:-2]) # Retrieving the classifier part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
-        self.adaptive_pooling = nn.AdaptiveAvgPool2d((7, 7)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
+        self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
 
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x) # Applying the feature extraction part of the model
@@ -118,14 +118,20 @@ class DQN(nn.Module):
         super(DQN, self).__init__()        
         # Define the layers of the model based on the input size and output size
         self.classifier = nn.Sequential(
-            nn.Linear(input_size, 1024),
+            nn.Linear(input_size, 256),  # Adjusted layer size
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(1024, 1024),
+            nn.Linear(256, 256),  # Additional layer
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(1024, output_size)  # 'output_size' denotes the number of output actions
+            nn.Linear(256, 128),  # Additional layer
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, output_size)  # 'output_size' denotes the number of output actions
         )
 
     def forward(self, x):
         return self.classifier(x)
+    
+    def __call__(self, X):
+        return self.forward(X)

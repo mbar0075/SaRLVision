@@ -1,5 +1,6 @@
 import torch
 import random
+import numpy as np
 from collections import namedtuple, deque
 
 # Setting the device to cuda if cuda is available.
@@ -20,10 +21,11 @@ Tensor = FloatTensor
 
 FloatDType = torch.float32
 LongDType = torch.long
+BoolDType = torch.bool
 
 SAVE_MODEL_PATH = "models/"
 
-Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
 
     
 class ReplayBuffer(object):
@@ -43,9 +45,9 @@ class ReplayBuffer(object):
         self.capacity = capacity
         self.memory = deque(maxlen=capacity)
 
-    def push(self, *args):
+    def push(self, transition):
         """Save a transition."""
-        self.memory.append(Transition(*args))
+        self.memory.append(transition)
 
     def sample(self, batch_size):
         """Sampling a batch of transitions."""
@@ -62,7 +64,7 @@ def iou(bbox1, target_bbox):
             Calculating the IoU between two bounding boxes.
 
             Formula:
-                IoU(b, g) = area(b ∩ g) / area(b U g
+                IoU(b, g) = area(b ∩ g) / area(b U g)
 
             Args:
                 bbox1: The first bounding box.
