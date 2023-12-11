@@ -8,6 +8,7 @@ from utils import *
 from models import *
 import time
 import math
+import colorsys
 
 ACTION_HISTORY = [[100]*9]*10
 NU = 10.0
@@ -17,9 +18,14 @@ GROWTH_RATE = 0.0009
 ALPHA = 0.2
 MAX_STEPS = 100
 RENDER_MODE = None
+FEATURE_EXTRACTOR = VGG16FeatureExtractor()
+TARGET_SIZE = VGG16_TARGET_SIZE
+CLASSIFIER = ResNet50V2()
+CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
+
 
 class DetectionEnv(gym.Env):
-    def __init__(self, image, original_image, target_bbox, render_mode=RENDER_MODE, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
+    def __init__(self, image, original_image, target_bbox, render_mode=RENDER_MODE, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=FEATURE_EXTRACTOR, target_size=TARGET_SIZE, classifier=CLASSIFIER, classifier_target_size=CLASSIFIER_TARGET_SIZE):
         """
             Constructor of the DetectionEnv class.
 
@@ -87,6 +93,15 @@ class DetectionEnv(gym.Env):
         self.threshold = threshold
         self.max_threshold = MAX_THRESHOLD
         self.growth_rate = GROWTH_RATE
+
+        # Classification part
+        self.label = None
+        self.label_confidence = None
+        self.classifier = classifier
+        self.classifier_target_size = classifier_target_size
+
+        # Displaying part (Retrieving a random color for the bounding box).
+        self.color = self.generate_random_color()
 
     def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=iou):
         """
@@ -186,15 +201,15 @@ class DetectionEnv(gym.Env):
         """
         #----------------------------------------------
         # Drawing the bounding box on the image.
-        xmin, ymin, xmax, ymax = self.bbox
-        image = self.original_image.copy()
+        # xmin, ymin, xmax, ymax = self.bbox
+        # image = self.original_image.copy()
 
-        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)
+        # cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)
 
-        image = transform_input(image, target_size=self.target_size)
+        # image = transform_input(image, target_size=self.target_size)
         #----------------------------------------------
         # Transforming the image.
-        # image = transform_input(self.image, target_size=self.target_size)
+        image = transform_input(self.image, target_size=self.target_size)
 
         # Retrieving the features of the image.
         features = self.get_features(image)
@@ -341,31 +356,31 @@ class DetectionEnv(gym.Env):
         """
         # If the action is 0, we print the name of the action.
         if action == 0:
-            print('\033[31m' + "Move right →" + '\033[0m')
+            print('\033[31m' + "Action: Move right →" + '\033[0m')
         # If the action is 1, we print the name of the action.
         elif action == 1:
-            print('\033[32m' + "Move left ←" + '\033[0m')
+            print('\033[32m' + "Action: Move left ←" + '\033[0m')
         # If the action is 2, we print the name of the action.
         elif action == 2:
-            print('\033[33m' + "Move up ↑" + '\033[0m')
+            print('\033[33m' + "Action: Move up ↑" + '\033[0m')
         # If the action is 3, we print the name of the action.
         elif action == 3:
-            print('\033[34m' + "Move down ↓" + '\033[0m')
+            print('\033[34m' + "Action: Move down ↓" + '\033[0m')
         # If the action is 4, we print the name of the action.
         elif action == 4:
-            print('\033[35m' + "Make bigger +" + '\033[0m')
+            print('\033[35m' + "Action: Make bigger +" + '\033[0m')
         # If the action is 5, we print the name of the action.
         elif action == 5:
-            print('\033[36m' + "Make smaller -" + '\033[0m')
+            print('\033[36m' + "Action: Make smaller -" + '\033[0m')
         # If the action is 6, we print the name of the action.
         elif action == 6:
-            print('\033[37m' + "Make fatter W" + '\033[0m')
+            print('\033[37m' + "Action: Make fatter W" + '\033[0m')
         # If the action is 7, we print the name of the action.
         elif action == 7:
-            print('\033[38m' + "Make taller H" + '\033[0m')
+            print('\033[38m' + "Action: Make taller H" + '\033[0m')
         # If the action is 8, we print the name of the action.
         elif action == 8:
-            print('\033[1m' + "Trigger T" + '\033[0m')
+            print('\033[1m' + "Action: Trigger T" + '\033[0m')
         pass
 
     def rewrap(self, coordinate, size):
@@ -407,9 +422,37 @@ class DetectionEnv(gym.Env):
             'iou': iou(self.bbox, self.target_bbox),
             'recall': recall(self.bbox, self.target_bbox),
             'threshold': self.threshold,
+            'label': self.label,
+            'label_confidence': self.label_confidence,
         }
     
-    def reset(self, seed=None, options=None, image=None, original_image=None, target_bbox=None, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=VGG16FeatureExtractor(), target_size=VGG16_TARGET_SIZE):
+    def generate_random_color(self, threshold=0.3):
+        """
+            Function that generates a random color.
+
+            Input:
+                - Threshold
+
+            Output:
+                - Random color
+        """
+        # Generating a random color.
+        red, green, blue = random.uniform(-threshold * 255, threshold * 255), random.uniform(-threshold * 255, threshold * 255), random.uniform(-threshold * 255, threshold * 255)
+
+        # Setting the colors to integers.
+        red, green, blue = int(red), int(green), int(blue)
+
+        # Making the color a bright color.
+        hue = random.uniform(0, 360)
+
+        # Converting the HSV color to RGB
+        hsv_color = (hue / 360, 1, 1)
+        random_rgb = tuple(int(i * 255) for i in colorsys.hsv_to_rgb(*hsv_color))
+
+        # Returning the new color
+        return random_rgb
+    
+    def reset(self, seed=None, options=None, image=None, original_image=None, target_bbox=None, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=FEATURE_EXTRACTOR, target_size=TARGET_SIZE, classifier=CLASSIFIER, classifier_target_size=CLASSIFIER_TARGET_SIZE):
         """
             Function that resets the environment.
 
@@ -461,8 +504,63 @@ class DetectionEnv(gym.Env):
         self.feature_extractor = feature_extractor
         self.transform = transform_input(self.image, target_size)
 
+        # Classification part
+        self.label = None
+        self.label_confidence = None
+        self.classifier = classifier
+        self.classifier_target_size = classifier_target_size
+
+        # Displaying part (Retrieving a random color for the bounding box).
+        self.color = self.generate_random_color()
+
         # Returning the observation space.
         return self.get_state(), {}
+    
+    def get_label(self):
+        """
+            Function that returns the label of the image.
+
+            Output:
+                - Label of the image
+        """
+        # Retrieving the bounding box coordinates.
+        x1, y1, x2, y2 = self.bbox
+
+        # Cropping the image.
+        image = self.original_image[y1:y2, x1:x2]
+
+        # Resize the image to the target size using OpenCV
+        image = cv2.resize(image, self.classifier_target_size)
+
+        # Prepare the image for the VGG16 model
+        image = preprocess_input(image)
+
+        # Expanding the dimensions to match the model's expectations
+        image = np.expand_dims(image, axis=0)
+
+        # Predicting the class
+        preds = self.classifier.predict(image, verbose=0)
+
+        # Retrieving the Label and the confidence of the image.
+        label = decode_predictions(preds, top=1)[0][0]
+
+        # Retrieving the label and the confidence.
+        self.label = label[1]
+        self.label_confidence = label[2]
+
+        # Returning the label and the confidence.
+        return self.label, self.label_confidence
+    
+    def predict(self):
+        """
+            Function that predicts the label of the image.
+        """
+        # Retrieving the label and the confidence of the image.
+        self.get_label()
+
+        # Displaying the image.
+        self.display(mode='image', do_display=True, text_display=True)
+        pass
     
     def step(self, action):
         """
@@ -527,27 +625,63 @@ class DetectionEnv(gym.Env):
     def render(self, mode='human'):
         pass
     
-    def show(self, mode='image', do_display=False):
+    def display(self, mode='image', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):
         """
             Function that renders the environment.
 
             Input:
                 - Mode of rendering
                 - Whether to display the image or not
+                - Whether to display the text or not
+                - Alpha (transparency of the bounding box)
+                - Color of the bounding box
 
             Output:
                 - Image of the environment
         """
         # Retrieving bounding box coordinates.
-        xmin, ymin, xmax, ymax = self.bbox
+        x1, y1, x2, y2 = self.bbox
 
         # Checking the mode of rendering.
         if mode == 'image':
             # Creating a copy of the original image.
-            image = self.original_image.copy()
+            image_copy = self.original_image.copy()
 
-            # Drawing the bounding box on the image.
-            cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)
+            # Creating a filled rectangle for the bounding box
+            cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
+
+            # Blending the image with the rectangle using cv2.addWeighted
+            image = cv2.addWeighted(self.image, 1 - alpha, image_copy, alpha, 0)
+
+            # Adding a rectangle outline to the image
+            cv2.rectangle(image, (x1, y1), (x2, y2), self.color, 3)
+
+            # Adding the label to the image
+            if text_display and self.label is not None:
+                # Setting the font and the font scale
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.2
+                
+                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
+
+                # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+                (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+
+                # Ensuring that the label doesn't go out of bounds
+                if y1 - label_height - baseline < 0:
+                    y1 = label_height + baseline
+                if x1 + label_width > image.shape[1]:
+                    x1 = image.shape[1] - label_width
+                if y1 + label_height + baseline > image.shape[0]:
+                    y1 = image.shape[0] - label_height - baseline
+                if x1 < 0:
+                    x1 = 0
+
+                # Creating a filled rectangle for the label background
+                cv2.rectangle(image, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+
+                # Adding the label text to the image
+                cv2.putText(image, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
 
             # Plotting the image.
             if do_display:
@@ -560,7 +694,7 @@ class DetectionEnv(gym.Env):
             image = np.zeros_like(self.original_image)
 
             # Drawing the bounding box on the image.
-            cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), cv2.FILLED)
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, cv2.FILLED)
 
             # Plotting the image.
             if do_display:
@@ -573,7 +707,7 @@ class DetectionEnv(gym.Env):
             image = np.zeros_like(self.original_image)
 
             # Drawing the bounding box on the image.
-            cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), cv2.FILLED)
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, cv2.FILLED)
 
             # Creating the heatmap.
             heatmap = cv2.applyColorMap(image, cv2.COLORMAP_JET)

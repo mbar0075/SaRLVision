@@ -3,6 +3,13 @@ import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 from torchvision.models import vgg16, VGG16_Weights, resnet50, ResNet50_Weights, mobilenet_v2
+from keras.applications.vgg16 import VGG16, decode_predictions, preprocess_input
+from keras.applications.resnet_v2 import ResNet50V2, decode_predictions, preprocess_input
+from keras.applications.mobilenet_v2 import MobileNetV2, decode_predictions, preprocess_input
+from keras.applications.efficientnet_v2 import EfficientNetB0, decode_predictions, preprocess_input
+from keras.applications.xception import Xception, decode_predictions, preprocess_input
+from keras.applications.inception_v3 import InceptionV3, decode_predictions, preprocess_input
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -44,7 +51,7 @@ class ResNet50FeatureExtractor(nn.Module):
         resnet50_model.eval() # Setting the model in evaluation mode to not do dropout.
         modules = list(resnet50_model.children())[:-2] # Retrieving the first child of the model, which is typically the feature extraciton part of the model
         self.features = nn.Sequential(*modules) # Retrieving the classifier part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
-        self.adaptive_pooling = nn.AdaptiveAvgPool2d((7, 7)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
+        self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
     
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x) # Applying the feature extraction part of the model
@@ -63,7 +70,7 @@ class MobileNetV2FeatureExtractor(nn.Module):
         mobilenetv2 = mobilenet_v2(pretrained=True)
         mobilenetv2.eval() # Setting the model in evaluation mode to not do dropout.
         self.features = mobilenetv2.features  # Extract features using the predefined function
-        self.adaptive_pooling = nn.AdaptiveAvgPool2d((7, 7)) # Define the adaptive pooling layer
+        self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Define the adaptive pooling layer
     
     def forward(self, x):
         x = self.features(x)  # Feature extraction
@@ -93,7 +100,6 @@ def transform_input(image, target_size):
             transforms.ToTensor(),
     ])
     return transform(image)
-    
 
 """
     Architecture of the DQN model.
