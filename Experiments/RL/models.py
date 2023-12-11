@@ -6,7 +6,7 @@ from torchvision.models import vgg16, VGG16_Weights, resnet50, ResNet50_Weights,
 from keras.applications.vgg16 import VGG16, decode_predictions, preprocess_input
 from keras.applications.resnet_v2 import ResNet50V2, decode_predictions, preprocess_input
 from keras.applications.mobilenet_v2 import MobileNetV2, decode_predictions, preprocess_input
-from keras.applications.efficientnet_v2 import EfficientNetB0, decode_predictions, preprocess_input
+from keras.applications.efficientnet_v2 import EfficientNetV2, decode_predictions, preprocess_input
 from keras.applications.xception import Xception, decode_predictions, preprocess_input
 from keras.applications.inception_v3 import InceptionV3, decode_predictions, preprocess_input
 
