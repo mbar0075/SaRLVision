@@ -2,204 +2,291 @@ from models import *
 from utils import *
 
 import os
-import math
-import random
+import time
+import renderlab as rl
+import gymnasium as gym
+import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.nn as nn
-import torch.nn.parallel
-import torch.optim as optim
+import itertools
+import random
+import warnings
+warnings.filterwarnings("ignore")
 
 
-class DQNAgent(object):
+class DQNAgent():
     """
-        DQN Agent class.
-    """
-    def __init__(self, input_size, output_size, replay_buffer_size=100, batch_size=64, gamma=0.99,
-                 epsilon_start=1.0, epsilon_final=0.0001, epsilon_decay=0.999, target_update=10, learning_rate=1e-5, save_path="DQN_models/"):
-        """
-            Constructor of the DQNAgent class.
-            
-            Args:
-                input_size: The input size of the model.
-                output_size: The output size of the model.
-                replay_buffer_size: The size of the replay buffer.
-                batch_size: The batch size.
-                gamma: The discount factor.
-                epsilon_start: The initial value of epsilon.
-                epsilon_final: The final value of epsilon.
-                epsilon_decay: The decay of epsilon.
-                target_update: The number of steps to update the target network.
-                learning_rate: The learning rate.
-                save_path: The path to save the network.
-                
-        """
-        self.device = device
-        self.input_size = input_size
-        self.output_size = output_size
-        self.replay_buffer = ReplayBuffer(replay_buffer_size)
-        self.batch_size = batch_size
-        self.gamma = gamma
-        self.epsilon = epsilon_start
-        self.epsilon_start = epsilon_start
-        self.epsilon_final = epsilon_final
-        self.epsilon_decay = epsilon_decay
-        self.target_update = target_update
-        self.episode_count = 0
-        self.step_count = 0
-        self.lr = learning_rate
-        self.save_path = SAVE_MODEL_PATH + save_path
-
-        # Creating the neural networks
-        # The policy network is used to select the actions
-        self.policy_net = DQN(input_size, output_size).to(self.device)
-
-        # The target network is used to compute the target Q-values
-        self.target_net = DQN(input_size, output_size).to(self.device)
-
-        # Initializing the target network with the same weights as the policy network
-        self.target_net.load_state_dict(self.policy_net.state_dict())
-
-        # Setting the target network in evaluation mode
-        self.target_net.eval()
-
-        # Setting the optimizer
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
-
-
-    def reset(self):
-        """
-            Resetting the agent.
-        """
-        self.episode_count += 1
-        self.step_count = 0
-
-    def select_action(self, state):
-        """
-        Selecting an action based on the current state.
+        The DQN agent that interacts with the environment
 
         Args:
-            state: The current state.
+            env: The environment to interact with
+            replay_buffer: The replay buffer to store and sample transitions from
+            target_update_freq: The frequency with which the target network is updated
+            criterion: The loss function used to train the policy network
+            name: The name of the agent (default: DQN)
+            network: The network used to estimate the action-value function (default: DQN)
 
-        Returns:
-            The selected action (as a single integer).
-        """
-        # Converting state to a Torch tensor
-        state = torch.tensor(state, device=self.device, dtype=FloatDType).unsqueeze(0)
+        Attributes:
+            env: The environment to interact with
+            replay_buffer: The replay buffer to store and sample transitions from
+            nsteps: The number of steps to run the agent for
+            target_update_freq: The frequency with which the target network is updated
+            ninputs: The number of inputs
+            noutputs: The number of outputs
+            policy_net: The policy network
+            target_net: The target network
+            optimizer: The optimizer used to update the policy network
+            criterion: The loss function used to train the policy network
+            epsilon: The probability of selecting a random action
+            steps_done: The number of steps the agent has run for
+            episodes: The number of episodes the agent has run for
+            episode_avg_rewards: The average reward for each episode
+            episode_lengths: The lengths of each episode
+            best_episode: The best episode
+            solved: Whether the environment is solved
+            display_every_n_episodes: The number of episodes after which the results are displayed
+            time: The time taken to run the agent
+    """
+    def __init__(self, env, replay_buffer, target_update_freq, criterion=nn.SmoothL1Loss(), name="DQN", network=DQN):
+        self.env = env
+        self.replay_buffer = replay_buffer
+        self.target_update_freq = target_update_freq
+        self.ninputs = env.observation_space.shape[0]
+        self.noutputs = env.action_space.n
+        self.policy_net = network(self.ninputs, self.noutputs).to(device)
+        self.target_net = network(self.ninputs, self.noutputs).to(device)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
+        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=ALPHA)
+        self.criterion = criterion
+        self.epsilon = EPS_START
+        self.steps_done = 0
+        self.episodes = 0
+        self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
+        self.display_every_n_episodes = 1
 
-        # Selecting an action based on the epsilon-greedy policy
-        if random.random() > self.epsilon:
+    def select_action(self, state):
+        """ Selects an action using an epsilon greedy policy """
+        # Selecting a random action with probability epsilon
+        if random.random() <= self.epsilon: # Exploration
+            action = self.env.action_space.sample()
+        else: # Exploitation
+            # Selecting the action with the highest Q-value otherwise
             with torch.no_grad():
-                # Selecting the action with the highest Q-value
-                q_values = self.policy_net(state)
-                action = q_values.squeeze().argmax().item()  # Get the index of the maximum Q-value as the action
-        else:
-            # Selecting a random action
-            action = random.randrange(self.output_size)
-
-        # Returning the selected action
+                state = torch.from_numpy(state).float().unsqueeze(0).to(device)
+                qvalues = self.policy_net(state)
+                action = qvalues.argmax().item()
         return action
-    
-    def update_epsilon(self):
-        """
-            Updating epsilon.
-
-            Formula:
-                ε = ε_final + (ε_start - ε_final) * exp(-1. * step / ε_decay)
-        """
-        # self.epsilon = self.epsilon_final + (self.epsilon_start - self.epsilon_final) * \
-        #                math.exp(-1. * self.step_count / self.epsilon_decay)
-        
-        self.epsilon = max((self.epsilon*self.epsilon_decay, self.epsilon_final))
         
     def update(self):
-        """
-            Updating the agent.
-        """
-        # Checking if the replay buffer contains enough samples
-        if len(self.replay_buffer) < self.batch_size:
-            # print("Not enough samples in the replay buffer.")
-            return
-
-        # Increasing the step count
-        self.step_count += 1
-
-        # Updating epsilon
-        self.update_epsilon()
-
+        """ Updates the policy network using a batch of transitions """
         # Sampling a batch of transitions from the replay buffer
-        transitions = self.replay_buffer.sample(self.batch_size)
+        states, actions, rewards, dones, next_states = self.replay_buffer.sample_batch()
 
-        # Transposing the batch
-        batch = Transition(*zip(*transitions))
-
-        # Converting each element of the batch to a Torch tensor
-        state_batch = torch.stack(batch.state).squeeze(1).to(self.device)
-        action_batch = torch.tensor(batch.action, dtype=LongDType).unsqueeze(1).view(-1, 1).to(self.device)
-        reward_batch = torch.tensor(batch.reward, dtype=FloatDType).unsqueeze(1).view(-1, 1).to(self.device)
-        done_batch = torch.tensor(batch.done, dtype=BoolDType).unsqueeze(1).view(-1, 1).to(self.device)
-        next_state_batch = torch.stack(batch.next_state).squeeze(1).to(self.device)
-
+        # Converting the tensors to cuda tensors
+        states = states.to(device)
+        actions = actions.to(device)
+        rewards = rewards.to(device)
+        dones = dones.to(device)
+        next_states = next_states.to(device)
+        
+        # print("states.shape: ", states.shape)
+        # print("actions.shape: ", actions.shape)
         # Calculating the Q-values for the current states
-        q_values = self.policy_net(state_batch).gather(1, action_batch)
+        qvalues = self.policy_net(states.squeeze(1)).gather(1, actions)
 
         # Calculating the Q-values for the next states
-        next_q_values = torch.zeros(self.batch_size, device=self.device, dtype=FloatDType)
-        non_terminal_mask = torch.squeeze(torch.logical_not(done_batch), dim=1)
-        non_terminal_next_states = next_state_batch[non_terminal_mask]
+        with torch.no_grad():
+            # Calculating the Q-values for the next states using the target network (Q(s',a'))
+            target_qvalues = self.target_net(next_states.squeeze(1))
 
-        if len(non_terminal_next_states) > 0:
-            non_terminal_next_q_values = self.target_net(non_terminal_next_states).max(1)[0].detach()
-            next_q_values[non_terminal_mask] = non_terminal_next_q_values
+            # Calculating the maximum Q-values for the next states (max(Q(s',a'))
+            max_target_qvalues = torch.max(target_qvalues, axis=1).values.unsqueeze(1)
 
-        # Calculating the expected Q-values
-        expected_q_values = reward_batch + (self.gamma * next_q_values)
+            # Calculating the next Q-values using the Bellman equation (Q(s,a) = r + γ * max(Q(s',a')))
+            next_qvalues = rewards + GAMMA * (1 - dones.type(torch.float32)) * max_target_qvalues
 
         # Calculating the loss
-        loss = F.smooth_l1_loss(q_values, expected_q_values.unsqueeze(1))
+        loss = self.criterion(qvalues, next_qvalues)
 
-        # Backpropagating the loss
+        # Optimizing the model
         self.optimizer.zero_grad()
-        loss.backward(retain_graph=True)
+        loss.backward()
+
+        # Clipping the gradients
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
 
-        # Updating the target network, copying all weights and biases in DQN
-        if self.step_count % self.target_update == 0:
+        # Updating the target network
+        if self.episodes % self.target_update_freq == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
+            
 
-        del state_batch, action_batch, reward_batch, done_batch, next_state_batch, q_values, next_q_values, \
+    def update_epsilon(self):
+        """ Updates epsilon """
+        self.epsilon = max(EPS_END, EPS_DECAY * self.epsilon)
 
-    def save_network(self):
-        """
-            Saving the network.
-        """
-        # Creating the folder if it does not exist
-        if not os.path.exists(self.save_path):
-            os.makedirs(self.save_path)
+    def train(self):
+        """ Trains the agent for nsteps steps """
+        # Resetting the environment
+        obs, _ = self.env.reset()
+
+        # Retrieving the starting time
+        start_time = time.time()
+
+        # Setting the episode_reward to 0
+        episode_reward = 0
+
+        # Running the agent for nsteps steps
+        for step in itertools.count():
+            # Selecting an action
+            action = self.select_action(obs)
+
+            # Taking a step in the environment
+            new_obs, reward, terminated, truncated, _ = self.env.step(action)
+
+            # Adding the reward to the cumulative reward
+            episode_reward += reward
+
+            # Setting done to terminated or truncated
+            done = terminated or truncated
+
+            # Creating a transition
+            transition = Transition(obs, action, reward, done, new_obs)
+
+            # Appending the transition to the replay buffer
+            self.replay_buffer.append(transition)
+
+            # Resetting the observation
+            obs = new_obs
+
+            # Ending the episode and displaying the results if the episode is done
+            if done:
+                # Appending the rewards to the replay buffer
+                self.replay_buffer.rewards.append(episode_reward)
+
+                # Updating epsilon
+                self.update_epsilon()
+
+                # Resetting the environment
+                obs, _ = self.env.reset()
+
+                # Incrementing the number of episodes
+                self.episodes += 1
+
+                # Appending the average episode reward
+                self.episode_info["episode_avg_rewards"].append(np.mean(self.replay_buffer.rewards))
+
+                # Appending the episode length
+                self.episode_info["episode_lengths"].append(self.steps_done)
+
+                # Updating the best episode
+                if self.episode_info["episode_avg_rewards"][-1] > self.episode_info["best_episode"]["avg_reward"]:
+                    self.episode_info["best_episode"]["episode"] = self.episodes
+                    self.episode_info["best_episode"]["avg_reward"] = self.episode_info["episode_avg_rewards"][-1]
+
+                # Checking if the environment is solved
+                if np.mean(self.episode_info["episode_avg_rewards"][-MAX_REPLAY_SIZE:]) >= SUCCESS_CRITERIA:
+                    self.episode_info["solved"] = True
+
+                # Checking if the environment is solved
+                if self.episode_info["solved"]:
+                    print("\033[32mSolved in {} episodes!\033[0m".format(self.episodes))
+                    print("-" * 100)
+                    break
+                
+                # Displaying the results
+                if self.episodes % self.display_every_n_episodes == 0:
+                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {}".format(
+                                self.episodes,
+                                self.epsilon,
+                                self.episode_info["episode_avg_rewards"][-1],
+                                self.episode_info["episode_lengths"][-1])
+                        )
+                    print("-" * 100)
+
+                # Resetting the cumulative reward
+                episode_reward = 0
+
+            # Updating the policy network
+            self.update()
+
+            # Updating the number of steps
+            self.steps_done += 1
+
+        # Retrieving the ending time
+        end_time = time.time()
+
+        # Calculating the time taken
+        self.episode_info["eps_duration"] = end_time - start_time
+
+    def run(self):
+        """ Runs the agent """
+        # Initializing the replay buffer
+        self.replay_buffer.initialize()
+
+        # Training the agent
+        self.train()
+
+
+    def test(self):
+        """ Tests the trained agent """
+        # Importing renderlab
+        import renderlab as rl
+
+        # Setting renderlab
+        env = rl.RenderFrame(self.env, "./video")
+
+        # Resetting the environment
+        obs, _ = self.env.reset()
+
+        # Playing the environment
+        while True:
+            # Selecting the action with the highest Q-value
+            action = int(torch.argmax(self.policy_net(torch.from_numpy(obs).float().unsqueeze(0).to(device))).item())
+
+            # Taking a step in the environment
+            obs, _, terminated, truncated, _ = self.env.step(action)
+
+            # Setting done to terminated or truncated
+            if terminated or truncated:
+                break
         
-        # Saving the network
-        torch.save(self.policy_net, self.save_path + "policy_net.pt")
-        torch.save(self.target_net, self.save_path + "target_net.pt")
+        # Playing the video
+        self.env.play()
 
-        # Printing the path where the network is saved
-        print("Network saved at: " + self.save_path)
 
-    def load_network(self):
+    def save(self, path="models/dqn"):
+        """ Function to save the model 
+            
+            Args:
+                path (str): The path to save the model to
         """
-            Loading the network.
+        # Creating the directory if it does not exist
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        # Saving the model
+        torch.save(self.policy_net.state_dict(), path + "/policy_net.pth")
+        torch.save(self.target_net.state_dict(), path + "/target_net.pth")
+
+        # Saving the episode info
+        np.save(path + "/episode_info.npy", self.episode_info)
+
+    def load(self, path="models/dqn"):
+        """ Function to load the model 
+            
+            Args:
+                path (str): The path to load the model from
         """
-        # Checking if the network exists
-        if torch.cuda.is_available():
-            self.policy_net = torch.load(self.save_path + "policy_net.pt").to(self.device)
-            self.target_net = torch.load(self.save_path + "target_net.pt").to(self.device)
-        else:
-            self.policy_net = torch.load(self.save_path + "policy_net.pt", map_location=torch.device('cpu'))
-            self.target_net = torch.load(self.save_path + "target_net.pt", map_location=torch.device('cpu'))
+        # Loading the model
+        self.policy_net.load_state_dict(torch.load(path + "/policy_net.pth"))
+        self.target_net.load_state_dict(torch.load(path + "/target_net.pth"))
 
-        # Setting the target network in evaluation mode
-        self.target_net.eval()
+        # Loading the episode info
+        self.episode_info = np.load(path + "/episode_info.npy", allow_pickle=True).item()
 
-        # Printing the path where the network is loaded from
-        print("Network loaded from: " + self.save_path)
-        return self.policy_net, self.target_net
-
+    def get_episode_info(self):
+        """ Returns the episode info """
+        return self.episode_info

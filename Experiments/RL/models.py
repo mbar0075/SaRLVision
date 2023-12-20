@@ -119,25 +119,52 @@ def transform_input(image, target_size):
 #     def forward(self, x):
 #         return self.classifier(x)
 
-class DQN(nn.Module):
-    def __init__(self, input_size, output_size):
-        super(DQN, self).__init__()        
-        # Define the layers of the model based on the input size and output size
-        self.classifier = nn.Sequential(
-            nn.Linear(input_size, 256),  # Adjusted layer size
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(256, 256),  # Additional layer
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(256, 128),  # Additional layer
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(128, output_size)  # 'output_size' denotes the number of output actions
-        )
+# class DQN(nn.Module):
+#     def __init__(self, input_size, output_size):
+#         super(DQN, self).__init__()        
+#         # Define the layers of the model based on the input size and output size
+#         self.classifier = nn.Sequential(
+#             nn.Linear(input_size, 256),  # Adjusted layer size
+#             nn.ReLU(),
+#             nn.Dropout(0.2),
+#             nn.Linear(256, 256),  # Additional layer
+#             nn.ReLU(),
+#             nn.Dropout(0.2),
+#             nn.Linear(256, 128),  # Additional layer
+#             nn.ReLU(),
+#             nn.Dropout(0.2),
+#             nn.Linear(128, output_size)  # 'output_size' denotes the number of output actions
+#         )
 
-    def forward(self, x):
-        return self.classifier(x)
+#     def forward(self, x):
+#         return self.classifier(x)
     
+#     def __call__(self, X):
+#         return self.forward(X)
+class DQN(nn.Module):
+    """
+        The DQN network that estimates the action-value function
+
+        Args:
+            ninputs: The number of inputs
+            noutputs: The number of outputs
+
+        Layers:
+            1. Linear layer with 64 neurons
+            2. Tanh activation function
+            3. Linear layer with noutputs neurons
+    """
+    def __init__(self, ninputs, noutputs):
+        super(DQN, self).__init__()
+        self.a1 = nn.Linear(ninputs, 64)
+        self.a2 = nn.Linear(64, noutputs)
+
+    def forward(self, X):
+        # Forward pass
+        o = self.a1(X)
+        o = torch.tanh(o)
+        o = self.a2(o)
+        return o
+
     def __call__(self, X):
         return self.forward(X)

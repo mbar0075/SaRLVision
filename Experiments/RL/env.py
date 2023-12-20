@@ -1,5 +1,6 @@
 import cv2
 import gymnasium as gym
+from gymnasium import Env, spaces
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,22 +10,27 @@ from models import *
 import time
 import math
 import colorsys
+import pygame
 
-ACTION_HISTORY = [[100]*9]*10
-NU = 10.0
+ACTION_HISTORY = [[100]*9]*20
+NU = 20.0
 THRESHOLD = 0.4
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
-ALPHA = 0.2
-MAX_STEPS = 100
-RENDER_MODE = None
+ALPHA = 0.01
+MAX_STEPS = 10000
+RENDER_MODE = "rgb_array" #None
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
 CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
+WINDOW_SIZE = 500
+SIZE = 224
 
 
-class DetectionEnv(gym.Env):
+class DetectionEnv(Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+
     def __init__(self, image, original_image, target_bbox, render_mode=RENDER_MODE, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=FEATURE_EXTRACTOR, target_size=TARGET_SIZE, classifier=CLASSIFIER, classifier_target_size=CLASSIFIER_TARGET_SIZE):
         """
             Constructor of the DetectionEnv class.
@@ -102,6 +108,18 @@ class DetectionEnv(gym.Env):
 
         # Displaying part (Retrieving a random color for the bounding box).
         self.color = self.generate_random_color()
+
+        # For rendering
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        if render_mode is None:
+            self.is_render = False
+        else:
+            self.is_render = True
+        self.render_mode = render_mode
+        self.window_size = WINDOW_SIZE
+        self.size = SIZE
+        self.window = None
+        self.clock = None
 
     def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=iou):
         """
@@ -220,11 +238,14 @@ class DetectionEnv(gym.Env):
         # Flattenning the action history.
         action_history = torch.tensor(self.actions_history, dtype=dtype).flatten().view(1, -1)
 
+        # Appending bounding box coordinates to the beginning of the action history.
+        action_history = torch.cat((torch.tensor(self.bbox, dtype=dtype).view(1, -1), action_history), 1)
+
         # Concatenating the features and the action history.
-        state = torch.cat((features, action_history), 1)
+        state = torch.cat((action_history, features), 1)
 
         # Returning the state.
-        return state
+        return state.detach().cpu().numpy()
     
     def update_history(self, action):
         """
@@ -559,8 +580,10 @@ class DetectionEnv(gym.Env):
         self.get_label()
 
         # Displaying the image.
-        self.display(mode='image', do_display=True, text_display=True)
-        pass
+        image = self.display(mode='image', do_display=True, text_display=True)
+        
+        # Returning the image.
+        return image
     
     def step(self, action):
         """
@@ -622,8 +645,62 @@ class DetectionEnv(gym.Env):
         # Returning the state of the environment, the reward, whether the episode is finished or not, whether the episode is truncated or not and the information of the environment.
         return self.get_state(), reward, self.terminated, self.truncated, self.get_info()
     
-    def render(self, mode='human'):
-        pass
+    def render(self, mode='rgb_array'):
+        if self.window is None:
+            pygame.init()
+            pygame.display.init()
+            self.window = pygame.display.set_mode((self.window_size, self.window_size))
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+        
+        return self._render_frame(mode=mode)
+
+    def _render_frame(self, mode='rgb_array', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):
+        # Retrieving bounding box coordinates.
+        x1, y1, x2, y2 = self.bbox
+
+        # Create a Pygame Surface to render on
+        canvas = pygame.Surface((self.window_size, self.window_size))
+
+        # Checking the mode of rendering.
+        if mode == 'rgb_array':
+            # Fill the canvas with white color
+            canvas.fill((255, 255, 255))
+
+            # Create a filled rectangle for the bounding box
+            pygame.draw.rect(canvas, self.color, (x1, y1, x2 - x1, y2 - y1), 0)
+            pygame.draw.rect(canvas, self.color, (x1, y1, x2 - x1, y2 - y1), 3)
+
+            # Adding the label to the image
+            if text_display and self.label is not None:
+                font = pygame.font.Font(None, 30)
+                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
+                text_surface = font.render(text, True, (255, 255, 255))
+                canvas.blit(text_surface, (x1, y1))
+
+        elif mode == 'bbox':
+            # Fill the canvas with black color
+            canvas.fill((0, 0, 0))
+
+            # Create a rectangle for the bounding box
+            pygame.draw.rect(canvas, color, (x1, y1, x2 - x1, y2 - y1), 0)
+
+        elif mode == 'heatmap':
+            # Fill the canvas with black color
+            canvas.fill((0, 0, 0))
+
+            # Create a rectangle for the bounding box
+            pygame.draw.rect(canvas, color, (x1, y1, x2 - x1, y2 - y1), 0)
+            # Apply color map to the rectangle
+            heatmap = cv2.applyColorMap(canvas, cv2.COLORMAP_JET)
+            canvas = pygame.surfarray.make_surface(heatmap.swapaxes(0, 1))
+
+        if do_display:
+            # Display the frame
+            self.window.blit(canvas, (0, 0))
+            pygame.display.update()
+
+        return pygame.surfarray.array3d(canvas)
     
     def display(self, mode='image', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):
         """
@@ -738,5 +815,9 @@ class DetectionEnv(gym.Env):
         """
             Function that closes the environment.
         """
-        gym.Env.close(self)
+        # Close the Pygame window
+        if self.is_render:
+            pygame.quit()
+
+        Env.close(self)
         pass
