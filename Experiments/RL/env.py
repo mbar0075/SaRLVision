@@ -13,8 +13,8 @@ import colorsys
 import pygame
 
 ACTION_HISTORY = [[100]*9]*20
-NU = 20.0
-THRESHOLD = 0.4
+NU = 100.0
+THRESHOLD = 0.5 #0.7
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
 ALPHA = 0.01
@@ -136,7 +136,7 @@ class DetectionEnv(Env):
         """
         # Calculating the IoU between the current state and the target bounding box.
         iou_current = reward_function(current_state, target_bbox)
-
+ 
         # Calculating the IoU between the previous state and the target bounding box.
         iou_previous = reward_function(previous_state, target_bbox)
 
@@ -535,7 +535,7 @@ class DetectionEnv(Env):
         self.color = self.generate_random_color()
 
         # Returning the observation space.
-        return self.get_state(), {}
+        return self.get_state(), self.get_info()
     
     def get_label(self):
         """

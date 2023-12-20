@@ -62,7 +62,7 @@ class DQNAgent():
         self.epsilon = EPS_START
         self.steps_done = 0
         self.episodes = 0
-        self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
+        self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "iou": [], "recall": [],  "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
         self.display_every_n_episodes = 1
 
     def select_action(self, state):
@@ -144,7 +144,7 @@ class DQNAgent():
             action = self.select_action(obs)
 
             # Taking a step in the environment
-            new_obs, reward, terminated, truncated, _ = self.env.step(action)
+            new_obs, reward, terminated, truncated, info = self.env.step(action)
 
             # Adding the reward to the cumulative reward
             episode_reward += reward
@@ -186,8 +186,22 @@ class DQNAgent():
                     self.episode_info["best_episode"]["episode"] = self.episodes
                     self.episode_info["best_episode"]["avg_reward"] = self.episode_info["episode_avg_rewards"][-1]
 
+                # Retrieving iou
+                iou = info["iou"]
+
+                # Retrieving recall
+                recall = info["recall"]
+
+                # Appending the iou
+                self.episode_info["iou"].append(iou)
+
+                # Appending the recall
+                self.episode_info["recall"].append(recall)
+
                 # Checking if the environment is solved
-                if np.mean(self.episode_info["episode_avg_rewards"][-MAX_REPLAY_SIZE:]) >= SUCCESS_CRITERIA:
+                # if np.mean(self.episode_info["episode_avg_rewards"][-MAX_REPLAY_SIZE:]) >= SUCCESS_CRITERIA:
+                #     self.episode_info["solved"] = True
+                if iou >= SUCCESS_CRITERIA:
                     self.episode_info["solved"] = True
 
                 # Checking if the environment is solved
@@ -198,16 +212,20 @@ class DQNAgent():
                 
                 # Displaying the results
                 if self.episodes % self.display_every_n_episodes == 0:
-                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {}".format(
+                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {} \033[35mIoU:\033[0m {:.2f} \033[35mRecall:\033[0m {:.2f}".format(
                                 self.episodes,
                                 self.epsilon,
                                 self.episode_info["episode_avg_rewards"][-1],
-                                self.episode_info["episode_lengths"][-1])
+                                self.episode_info["episode_lengths"][-1],
+                                iou,
+                                recall)
                         )
                     print("-" * 100)
 
                 # Resetting the cumulative reward
                 episode_reward = 0
+
+                self.steps_done = 0
 
             # Updating the policy network
             self.update()
