@@ -308,3 +308,103 @@ class DQNAgent():
     def get_episode_info(self):
         """ Returns the episode info """
         return self.episode_info
+
+class DoubleDQNAgent(DQNAgent):
+    """ The Double DQN agent that interacts with the environment and inherits from the DQN agent """
+    def __init__(self, env, replay_buffer, target_update_freq, criterion=nn.SmoothL1Loss(), name="DoubleDQN"):
+        super().__init__(env, replay_buffer, target_update_freq, criterion, name, DQN)
+
+    def update(self):
+        """ Updates the policy network using a batch of transitions """
+        # Sampling a batch of transitions from the replay buffer
+        states, actions, rewards, dones, next_states = self.replay_buffer.sample_batch()
+
+        # Converting the tensors to cuda tensors
+        states = states.to(device).squeeze(1)
+        actions = actions.to(device)
+        rewards = rewards.to(device)
+        dones = dones.to(device)
+        next_states = next_states.to(device).squeeze(1)
+        
+        # Calculating the Q-values for the current states
+        qvalues = self.policy_net(states).gather(1, actions)
+
+        # Calculating the Q-values for the next states
+        with torch.no_grad():
+            # Using the policy network to select the action with the highest Q-value for the next states (argmax(Q(s',a)))
+            next_state_actions = self.policy_net(next_states).argmax(dim=1, keepdim=True)
+            
+            # Using the target network to calculate the Q-value of the selected action for the next states (Q'(s',argmax(Q(s',a))))
+            next_qvalues = self.target_net(next_states).gather(1, next_state_actions)
+
+            # Calculating the next Q-values using the Bellman equation (Q(s,a) = r + γ * Q'(s',argmax(Q(s',a))))
+            target_qvalues = rewards + GAMMA * (1 - dones.type(torch.float32)) * next_qvalues
+
+        # Calculating the loss
+        loss = self.criterion(qvalues, target_qvalues)
+
+        # Optimizing the model
+        self.optimizer.zero_grad()
+        loss.backward()
+
+        # Clipping the gradients
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
+        self.optimizer.step()
+
+        # Updating the target network
+        if self.episodes % self.target_update_freq == 0:
+            self.target_net.load_state_dict(self.policy_net.state_dict())
+
+class DuelingDQNAgent(DQNAgent):
+    """ The Dueling DQN agent that interacts with the environment and inherits from the DQN agent """
+    def __init__(self, env, replay_buffer, target_update_freq, criterion=nn.SmoothL1Loss(), name="DuelingDQN"):
+        super().__init__(env, replay_buffer, target_update_freq, criterion, name, DuelingDQN)
+
+
+class DoubleDuelingDQNAgent(DQNAgent):
+    """ The Double Dueling DQN agent that interacts with the environment and inherits from the DQN agent """
+    def __init__(self, env, replay_buffer, target_update_freq, criterion=nn.SmoothL1Loss(), name="DoubleDuelingDQN"):
+        super().__init__(env, replay_buffer, target_update_freq, criterion, name, DuelingDQN)
+
+    def update(self):
+        """ Updates the policy network using a batch of transitions """
+        # Sampling a batch of transitions from the replay buffer
+        states, actions, rewards, dones, next_states = self.replay_buffer.sample_batch()
+
+        # Converting the tensors to cuda tensors
+        states = states.to(device).squeeze(1)
+        actions = actions.to(device)
+        rewards = rewards.to(device)
+        dones = dones.to(device)
+        next_states = next_states.to(device).squeeze(1)
+        
+        # Calculating the Q-values for the current states
+        qvalues = self.policy_net(states).gather(1, actions)
+
+        # Calculating the Q-values for the next states
+        with torch.no_grad():
+            # Using the policy network to select the action with the highest Q-value for the next states (argmax(Q(s',a)))
+            next_state_actions = self.policy_net(next_states).argmax(dim=1, keepdim=True)
+            
+            # Using the target network to calculate the Q-value of the selected action for the next states (Q'(s',argmax(Q(s',a))))
+            next_qvalues = self.target_net(next_states).gather(1, next_state_actions)
+
+            # Calculating the next Q-values using the Bellman equation (Q(s,a) = r + γ * Q'(s',argmax(Q(s',a))))
+            target_qvalues = rewards + GAMMA * (1 - dones.type(torch.float32)) * next_qvalues
+
+        # Calculating the loss
+        loss = self.criterion(qvalues, target_qvalues)
+
+        # Optimizing the model
+        self.optimizer.zero_grad()
+        loss.backward()
+
+        # Clipping the gradients
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
+        self.optimizer.step()
+
+        # Updating the target network
+        if self.episodes % self.target_update_freq == 0:
+            self.target_net.load_state_dict(self.policy_net.state_dict())

@@ -27,11 +27,11 @@ SAVE_MODEL_PATH = "models/"
 
 
 # The learning rate α ∈ (0, 1] controls how much we update our current value estimates towards newly received returns.
-ALPHA = 0.001
+ALPHA = 1e-6
 # Gamma refers to the discount factor γ ∈ [0, 1]. It quantifies how much importance is given to future rewards.
-GAMMA = 0.99
+GAMMA = 0.90 #0.99
 # The batch size is the number of training examples used in one iteration (that is, one gradient update) of training.
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 # The buffer size is the number of transitions stored in the replay buffer, which the agent samples from to learn.
 BUFFER_SIZE = 10000
 # The minimum replay size is the minimum number of transitions that need to be stored in the replay buffer before the agent starts learning.
@@ -41,11 +41,11 @@ MAX_REPLAY_SIZE = 50
 # Epsilon start, epsilon end and epsilon decay are the parameters for the epsilon greedy exploration strategy.
 EPS_START = 0.9
 EPS_END = 0.05
-EPS_DECAY = 0.997
+EPS_DECAY = 0.99
 # The target update frequency is the frequency with which the target network is updated.
 TARGET_UPDATE_FREQ = 5
 # The success criteria is the average reward over the last 50 episodes that the agent must achieve to be considered successful.
-SUCCESS_CRITERIA = 0.9
+SUCCESS_CRITERIA = 0.95#0.9
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
 

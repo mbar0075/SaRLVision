@@ -156,8 +156,8 @@ class DQN(nn.Module):
     """
     def __init__(self, ninputs, noutputs):
         super(DQN, self).__init__()
-        self.a1 = nn.Linear(ninputs, 64)
-        self.a2 = nn.Linear(64, noutputs)
+        self.a1 = nn.Linear(ninputs, 1024)
+        self.a2 = nn.Linear(1024, noutputs)
 
     def forward(self, X):
         # Forward pass
@@ -165,6 +165,46 @@ class DQN(nn.Module):
         o = torch.tanh(o)
         o = self.a2(o)
         return o
+
+    def __call__(self, X):
+        return self.forward(X)
+
+class DuelingDQN(nn.Module):
+    """
+        The dueling DQN network that estimates the action-value function
+
+        Args:
+            ninputs: The number of inputs
+            noutputs: The number of outputs
+
+        Layers:
+            1. Linear layer with 64 neurons
+            2. Tanh activation function
+            3. Linear layer with 32 neurons
+            4. Linear layer with 1 neuron
+            5. Linear layer with 32 neurons
+            6. Linear layer with noutputs neurons
+    """
+    def __init__(self, ninputs, noutputs):
+        super(DuelingDQN, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(ninputs, 1024),
+            nn.Tanh(),
+            nn.Linear(1024, 32)
+        )
+        # The value function estimates the value of being in a particular state
+        self.valfunc = nn.Linear(32, 1)
+        # The advantage function estimates how good it is to take a particular action in a given state
+        self.advfunc = nn.Linear(32, noutputs)
+
+    def forward(self, X):
+        # Forward pass through the network
+        o = self.net(X)
+        # Splitting the output into the value and advantage functions
+        value = self.valfunc(o)
+        adv = self.advfunc(o)
+        # Returning the value and advantage functions combined into the Q function (Q = V + A - mean(A))
+        return value + adv - adv.mean(dim=-1, keepdim=True)
 
     def __call__(self, X):
         return self.forward(X)

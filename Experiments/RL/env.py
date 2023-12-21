@@ -13,7 +13,7 @@ import colorsys
 import pygame
 
 ACTION_HISTORY = [[100]*9]*20
-NU = 100.0
+NU = 3.0
 THRESHOLD = 0.5 #0.7
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
@@ -26,6 +26,7 @@ CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
 WINDOW_SIZE = 500
 SIZE = 224
+REWARD_FUNC = iou
 
 
 class DetectionEnv(Env):
@@ -121,7 +122,7 @@ class DetectionEnv(Env):
         self.window = None
         self.clock = None
 
-    def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=iou):
+    def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=REWARD_FUNC):
         """
             Calculating the reward.
 
@@ -142,7 +143,7 @@ class DetectionEnv(Env):
 
         # Calculating the reward.
         reward = iou_current - iou_previous
-
+        return reward
         # If the reward is smaller than 0, we return -1 else we return 1.
         if reward <= 0:
             return -1
@@ -280,24 +281,23 @@ class DetectionEnv(Env):
     
     def transform_action(self, action):
         """
-            Function that applies the action to the image.
+        Function that applies the action to the image.
 
-            Actions:
-                - 0: Move right
-                - 1: Move left
-                - 2: Move up
-                - 3: Move down
-                - 4: Make bigger
-                - 5: Make smaller
-                - 6: Make fatter
-                - 7: Make taller
+        Actions:
+            - 0: X1Left
+            - 1: X1Right
+            - 2: X2Left
+            - 3: X2Right
+            - 4: Y1Up
+            - 5: Y1Down
+            - 6: Y2Up
+            - 7: Y2Down
 
-            Input:
-                - Action to apply
+        Input:
+            - Action to apply
 
-            Output:
-                - Bounding box of the image
-        
+        Output:
+            - Bounding box of the image
         """
         # Retrieving the bounding box of the image.
         bbox = self.bbox
@@ -306,103 +306,226 @@ class DetectionEnv(Env):
         xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
 
         # Calculating the alpha_h and alpha_w mentioned in the paper.
-        alpha_h = int(self.alpha * (  ymax - ymin ))
-        alpha_w = int(self.alpha * (  xmax - xmin ))
+        alpha_h = int(self.alpha * (ymax - ymin))
+        alpha_w = int(self.alpha * (xmax - xmin))
 
-        # If the action is 0, we move the bounding box to the right.
+        # If the action is 0, move X1 to the left.
         if action == 0:
-            xmin += alpha_w
-            xmax += alpha_w
-        # If the action is 1, we move the bounding box to the left. 
-        elif action == 1:
             xmin -= alpha_w
             xmax -= alpha_w
-        # If the action is 2, we move the bounding box up.
+        # If the action is 1, move X1 to the right.
+        elif action == 1:
+            xmin += alpha_w
+            xmax += alpha_w
+        # If the action is 2, move X2 to the left.
         elif action == 2:
-            ymin -= alpha_h
-            ymax -= alpha_h
-        # If the action is 3, we move the bounding box down.
+            xmin -= alpha_w
+            xmax -= alpha_w
+        # If the action is 3, move X2 to the right.
         elif action == 3:
-            ymin += alpha_h
-            ymax += alpha_h
-        # If the action is 4, we make the bounding box bigger.
+            xmin += alpha_w
+            xmax += alpha_w
+        # If the action is 4, move Y1 up.
         elif action == 4:
             ymin -= alpha_h
-            ymax += alpha_h
-            xmin -= alpha_w
-            xmax += alpha_w
-        # If the action is 5, we make the bounding box smaller.
+            ymax -= alpha_h
+        # If the action is 5, move Y1 down.
         elif action == 5:
             ymin += alpha_h
-            ymax -= alpha_h
-            xmin += alpha_w
-            xmax -= alpha_w
-        # If the action is 6, we make the bounding box fatter.
+            ymax += alpha_h
+        # If the action is 6, move Y2 up.
         elif action == 6:
-            ymin += alpha_h
+            ymin -= alpha_h
             ymax -= alpha_h
-        # If the action is 7, we make the bounding box taller.
+        # If the action is 7, move Y2 down.
         elif action == 7:
-            xmin += alpha_w
-            xmax -= alpha_w
+            ymin += alpha_h
+            ymax += alpha_h
 
-        # Returning the bounding box, whilst ensuring that the bounding box is within the image.
+        # Returning the bounding box, ensuring it remains within the image bounds.
         return [self.rewrap(xmin, self.width), self.rewrap(ymin, self.height), self.rewrap(xmax, self.width), self.rewrap(ymax, self.height)]
-    
+
     def get_actions(self):
         """
-            Function that prints the name of the actions.
+        Function that prints the name of the actions.
         """
         print('\033[1m' + "Actions:" + '\033[0m')
-        print('\033[31m' + "0: Move right → " + '\033[0m')
-        print('\033[32m' + "1: Move left ←" + '\033[0m')
-        print('\033[33m' + "2: Move up ↑" + '\033[0m')
-        print('\033[34m' + "3: Move down ↓" + '\033[0m')
-        print('\033[35m' + "4: Make bigger +" + '\033[0m')
-        print('\033[36m' + "5: Make smaller -" + '\033[0m')
-        print('\033[37m' + "6: Make fatter W" + '\033[0m')
-        print('\033[38m' + "7: Make taller H" + '\033[0m')
+        print('\033[31m' + "0: X1Right → " + '\033[0m')
+        print('\033[32m' + "1: X1Left ←" + '\033[0m')
+        print('\033[33m' + "2: X2Right →" + '\033[0m')
+        print('\033[34m' + "3: X2Left ←" + '\033[0m')
+        print('\033[35m' + "4: Y1Up ↑" + '\033[0m')
+        print('\033[36m' + "5: Y1Down ↓" + '\033[0m')
+        print('\033[37m' + "6: Y2Up ↑" + '\033[0m')
+        print('\033[38m' + "7: Y2Down ↓" + '\033[0m')
         print('\033[1m' + "8: Trigger T" + '\033[0m')
         pass
 
     def decode_action(self, action):
         """
-            Function that decodes the action.
+        Function that decodes the action.
 
-            Input:
-                - Action to decode
+        Input:
+            - Action to decode
 
-            Output:
-                - Decoded action
+        Output:
+            - Decoded action
         """
         # If the action is 0, we print the name of the action.
         if action == 0:
-            print('\033[31m' + "Action: Move right →" + '\033[0m')
+            print('\033[31m' + "Action: X1Right →" + '\033[0m')
         # If the action is 1, we print the name of the action.
         elif action == 1:
-            print('\033[32m' + "Action: Move left ←" + '\033[0m')
+            print('\033[32m' + "Action: X1Left ←" + '\033[0m')
         # If the action is 2, we print the name of the action.
         elif action == 2:
-            print('\033[33m' + "Action: Move up ↑" + '\033[0m')
+            print('\033[33m' + "Action: X2Right →" + '\033[0m')
         # If the action is 3, we print the name of the action.
         elif action == 3:
-            print('\033[34m' + "Action: Move down ↓" + '\033[0m')
+            print('\033[34m' + "Action: X2Left ←" + '\033[0m')
         # If the action is 4, we print the name of the action.
         elif action == 4:
-            print('\033[35m' + "Action: Make bigger +" + '\033[0m')
+            print('\033[35m' + "Action: Y1Up ↑" + '\033[0m')
         # If the action is 5, we print the name of the action.
         elif action == 5:
-            print('\033[36m' + "Action: Make smaller -" + '\033[0m')
+            print('\033[36m' + "Action: Y1Down ↓" + '\033[0m')
         # If the action is 6, we print the name of the action.
         elif action == 6:
-            print('\033[37m' + "Action: Make fatter W" + '\033[0m')
+            print('\033[37m' + "Action: Y2Up ↑" + '\033[0m')
         # If the action is 7, we print the name of the action.
         elif action == 7:
-            print('\033[38m' + "Action: Make taller H" + '\033[0m')
+            print('\033[38m' + "Action: Y2Down ↓" + '\033[0m')
         # If the action is 8, we print the name of the action.
         elif action == 8:
             print('\033[1m' + "Action: Trigger T" + '\033[0m')
         pass
+
+
+    # def transform_action(self, action):
+    #     """
+    #         Function that applies the action to the image.
+
+    #         Actions:
+    #             - 0: Move right
+    #             - 1: Move left
+    #             - 2: Move up
+    #             - 3: Move down
+    #             - 4: Make bigger
+    #             - 5: Make smaller
+    #             - 6: Make fatter
+    #             - 7: Make taller
+
+    #         Input:
+    #             - Action to apply
+
+    #         Output:
+    #             - Bounding box of the image
+        
+    #     """
+    #     # Retrieving the bounding box of the image.
+    #     bbox = self.bbox
+
+    #     # Retrieving the coordinates of the bounding box.
+    #     xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
+
+    #     # Calculating the alpha_h and alpha_w mentioned in the paper.
+    #     alpha_h = int(self.alpha * (  ymax - ymin ))
+    #     alpha_w = int(self.alpha * (  xmax - xmin ))
+
+    #     # If the action is 0, we move the bounding box to the right.
+    #     if action == 0:
+    #         xmin += alpha_w
+    #         xmax += alpha_w
+    #     # If the action is 1, we move the bounding box to the left. 
+    #     elif action == 1:
+    #         xmin -= alpha_w
+    #         xmax -= alpha_w
+    #     # If the action is 2, we move the bounding box up.
+    #     elif action == 2:
+    #         ymin -= alpha_h
+    #         ymax -= alpha_h
+    #     # If the action is 3, we move the bounding box down.
+    #     elif action == 3:
+    #         ymin += alpha_h
+    #         ymax += alpha_h
+    #     # If the action is 4, we make the bounding box bigger.
+    #     elif action == 4:
+    #         ymin -= alpha_h
+    #         ymax += alpha_h
+    #         xmin -= alpha_w
+    #         xmax += alpha_w
+    #     # If the action is 5, we make the bounding box smaller.
+    #     elif action == 5:
+    #         ymin += alpha_h
+    #         ymax -= alpha_h
+    #         xmin += alpha_w
+    #         xmax -= alpha_w
+    #     # If the action is 6, we make the bounding box fatter.
+    #     elif action == 6:
+    #         ymin += alpha_h
+    #         ymax -= alpha_h
+    #     # If the action is 7, we make the bounding box taller.
+    #     elif action == 7:
+    #         xmin += alpha_w
+    #         xmax -= alpha_w
+
+    #     # Returning the bounding box, whilst ensuring that the bounding box is within the image.
+    #     return [self.rewrap(xmin, self.width), self.rewrap(ymin, self.height), self.rewrap(xmax, self.width), self.rewrap(ymax, self.height)]
+    
+    # def get_actions(self):
+    #     """
+    #         Function that prints the name of the actions.
+    #     """
+    #     print('\033[1m' + "Actions:" + '\033[0m')
+    #     print('\033[31m' + "0: Move right → " + '\033[0m')
+    #     print('\033[32m' + "1: Move left ←" + '\033[0m')
+    #     print('\033[33m' + "2: Move up ↑" + '\033[0m')
+    #     print('\033[34m' + "3: Move down ↓" + '\033[0m')
+    #     print('\033[35m' + "4: Make bigger +" + '\033[0m')
+    #     print('\033[36m' + "5: Make smaller -" + '\033[0m')
+    #     print('\033[37m' + "6: Make fatter W" + '\033[0m')
+    #     print('\033[38m' + "7: Make taller H" + '\033[0m')
+    #     print('\033[1m' + "8: Trigger T" + '\033[0m')
+    #     pass
+
+    # def decode_action(self, action):
+    #     """
+    #         Function that decodes the action.
+
+    #         Input:
+    #             - Action to decode
+
+    #         Output:
+    #             - Decoded action
+    #     """
+    #     # If the action is 0, we print the name of the action.
+    #     if action == 0:
+    #         print('\033[31m' + "Action: Move right →" + '\033[0m')
+    #     # If the action is 1, we print the name of the action.
+    #     elif action == 1:
+    #         print('\033[32m' + "Action: Move left ←" + '\033[0m')
+    #     # If the action is 2, we print the name of the action.
+    #     elif action == 2:
+    #         print('\033[33m' + "Action: Move up ↑" + '\033[0m')
+    #     # If the action is 3, we print the name of the action.
+    #     elif action == 3:
+    #         print('\033[34m' + "Action: Move down ↓" + '\033[0m')
+    #     # If the action is 4, we print the name of the action.
+    #     elif action == 4:
+    #         print('\033[35m' + "Action: Make bigger +" + '\033[0m')
+    #     # If the action is 5, we print the name of the action.
+    #     elif action == 5:
+    #         print('\033[36m' + "Action: Make smaller -" + '\033[0m')
+    #     # If the action is 6, we print the name of the action.
+    #     elif action == 6:
+    #         print('\033[37m' + "Action: Make fatter W" + '\033[0m')
+    #     # If the action is 7, we print the name of the action.
+    #     elif action == 7:
+    #         print('\033[38m' + "Action: Make taller H" + '\033[0m')
+    #     # If the action is 8, we print the name of the action.
+    #     elif action == 8:
+    #         print('\033[1m' + "Action: Trigger T" + '\033[0m')
+    #     pass
 
     def rewrap(self, coordinate, size):
         """
