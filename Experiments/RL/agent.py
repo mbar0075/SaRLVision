@@ -201,14 +201,10 @@ class DQNAgent():
                 # Checking if the environment is solved
                 # if np.mean(self.episode_info["episode_avg_rewards"][-MAX_REPLAY_SIZE:]) >= SUCCESS_CRITERIA:
                 #     self.episode_info["solved"] = True
-                if iou >= SUCCESS_CRITERIA:
+                # If the last 50 episodes had an average IoU of 0.75 or more, the environment is considered solved
+                if np.mean(self.episode_info["iou"][-50:]) >= SUCCESS_CRITERIA:
                     self.episode_info["solved"] = True
 
-                # Checking if the environment is solved
-                if self.episode_info["solved"]:
-                    print("\033[32mSolved in {} episodes!\033[0m".format(self.episodes))
-                    print("-" * 100)
-                    break
                 
                 # Displaying the results
                 if self.episodes % self.display_every_n_episodes == 0:
@@ -226,6 +222,12 @@ class DQNAgent():
                 episode_reward = 0
 
                 self.steps_done = 0
+
+                # Checking if the environment is solved
+                if self.episode_info["solved"]:
+                    print("\033[32mSolved in {} episodes!\033[0m".format(self.episodes))
+                    print("-" * 100)
+                    break
 
             # Updating the policy network
             self.update()
