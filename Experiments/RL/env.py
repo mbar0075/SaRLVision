@@ -14,11 +14,11 @@ import pygame
 
 ACTION_HISTORY = [[100]*9]*20
 NU = 3.0
-THRESHOLD = 0.7 #0.8
+THRESHOLD = 1.0 #0.8
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
-ALPHA = 0.15
-MAX_STEPS = 1000
+ALPHA = 0.1
+MAX_STEPS = 100#200
 RENDER_MODE = "rgb_array" #None
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
@@ -27,7 +27,7 @@ CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
 WINDOW_SIZE = 500
 SIZE = 224
 REWARD_FUNC = iou
-ACTION_MODE =0  
+ACTION_MODE =1 #0  
 
 
 class DetectionEnv(Env):
@@ -145,7 +145,12 @@ class DetectionEnv(Env):
 
         # Calculating the reward.
         reward = iou_current - iou_previous
-        return reward
+
+        scaling_factor = 0.01
+        normalized_value = -(self.step_count / self.max_steps) * scaling_factor
+        reward += normalized_value
+
+        return reward 
         # If the reward is smaller than 0, we return -1 else we return 1.
         if reward <= 0:
             return -1
@@ -176,7 +181,7 @@ class DetectionEnv(Env):
 
         # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
         if reward >= self.threshold:
-            return self.nu#*abs(reward)
+            return self.nu*abs(reward)
         
         # Returning -1*trigger reward.
         return -1*self.nu#/abs(reward)
@@ -346,7 +351,10 @@ class DetectionEnv(Env):
         # Retrieving the coordinates of the bounding box.
         xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
 
-        # Calculating the alpha_h and alpha_w mentioned in the paper.
+        # Calculating the alpha_h and alpha_w mentioned in the paper, and adding to it a decreasing factor depending on the step count.
+        # alpha_h = int(self.alpha * (ymax - ymin)) + int(self.step_count * self.alpha * (ymax - ymin) / self.max_steps)
+        # alpha_w = int(self.alpha * (xmax - xmin)) + int(self.step_count * self.alpha * (xmax - xmin) / self.max_steps)
+
         alpha_h = int(self.alpha * (ymax - ymin))
         alpha_w = int(self.alpha * (xmax - xmin))
 
@@ -926,7 +934,7 @@ class DetectionEnv(Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(self.cumulative_reward))
+                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)))
 
             # Returning the image.
             return image
@@ -939,7 +947,7 @@ class DetectionEnv(Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(self.cumulative_reward))
+                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)))
 
             # Returning the image.
             return image
@@ -955,7 +963,7 @@ class DetectionEnv(Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(heatmap, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(self.cumulative_reward))
+                self.plot_img(heatmap, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)))
 
             # Returning the image.
             return heatmap

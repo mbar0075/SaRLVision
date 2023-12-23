@@ -16,6 +16,7 @@ warnings.filterwarnings("ignore")
 VGG16_TARGET_SIZE = (224, 224)
 RESNET50_TARGET_SIZE = (224, 224)
 MOBILENETV2_TARGET_SIZE = (224, 224)
+EFFICIENTNETV2_TARGET_SIZE = (224, 224)
 
 """
 This file was inspired from the Active Object Localization paper.
