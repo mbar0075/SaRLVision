@@ -14,10 +14,10 @@ import pygame
 
 ACTION_HISTORY = [[100]*9]*20
 NU = 3.0
-THRESHOLD = 1.0 #0.8
+THRESHOLD = 1.0 #1.0
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
-ALPHA = 0.1
+ALPHA = 0.1#0.1 #0.15
 MAX_STEPS = 100#200
 RENDER_MODE = "rgb_array" #None
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
@@ -29,10 +29,17 @@ SIZE = 224
 REWARD_FUNC = iou
 ACTION_MODE =1 #0  
 
-
 class DetectionEnv(Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
-
+    reward_penalty_dict = {
+        0: 1,
+        1: 0,
+        2: 3,
+        3: 2,
+        4: 5,
+        5: 4,
+    }
+    
     def __init__(self, image, original_image, target_bbox, render_mode=RENDER_MODE, mode=ACTION_MODE, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=FEATURE_EXTRACTOR, target_size=TARGET_SIZE, classifier=CLASSIFIER, classifier_target_size=CLASSIFIER_TARGET_SIZE):
         """
             Constructor of the DetectionEnv class.
@@ -124,6 +131,9 @@ class DetectionEnv(Env):
         self.window = None
         self.clock = None
 
+        # For opposite actions
+        self.current_action = None
+
     def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=REWARD_FUNC):
         """
             Calculating the reward.
@@ -146,9 +156,13 @@ class DetectionEnv(Env):
         # Calculating the reward.
         reward = iou_current - iou_previous
 
-        scaling_factor = 0.01
-        normalized_value = -(self.step_count / self.max_steps) * scaling_factor
-        reward += normalized_value
+        # scaling_factor = 0.01
+        # normalized_value = -(self.step_count / self.max_steps) * scaling_factor
+        # reward += normalized_value
+
+        # scaling_factor = 0.01
+        # normalized_value = -(self.reward_penalty()) * scaling_factor
+        # reward += normalized_value
 
         return reward 
         # If the reward is smaller than 0, we return -1 else we return 1.
@@ -157,6 +171,33 @@ class DetectionEnv(Env):
         
         # Returning 1.
         return 1
+    
+    def reward_penalty(self):
+        """
+            Calculating the reward penalty for those actions which do the opposite of the previous action.
+
+            Output:
+                - Reward penalty
+
+        """
+        penalty = 0
+        # Creating the action vector.
+        action_vector = [0] * 9
+        # Setting the current action to 1, based on the reward penalty dictionary which maps the action to the opposite action.
+        if self.current_action in self.reward_penalty_dict.keys():
+            action_vector[self.reward_penalty_dict[self.current_action]] = 1
+
+        # print("Action vector: ", action_vector, "Actions history: ", self.actions_history)
+        
+        # Iterating over the history of the actions backwards.
+        for i in range(len(self.actions_history)-1, -1, -1):
+            
+            # Checking if the action vector is equal to the action vector in the history of the actions, if yes we add the index to the penalty.
+            if  action_vector == self.actions_history[i]:
+                penalty += i
+
+        # Returning the reward penalty.
+        return penalty
     
     def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
         """
@@ -247,7 +288,8 @@ class DetectionEnv(Env):
         action_history = torch.tensor(self.actions_history, dtype=dtype).flatten().view(1, -1)
 
         # Appending bounding box coordinates to the beginning of the action history.
-        action_history = torch.cat((torch.tensor(self.bbox, dtype=dtype).view(1, -1), action_history), 1)
+        # action_history = torch.cat((torch.tensor(self.bbox, dtype=dtype).view(1, -1), action_history), 1)
+        action_history = torch.tensor(self.bbox, dtype=dtype).view(1, -1)
 
         # Concatenating the features and the action history.
         state = torch.cat((action_history, features), 1)
@@ -276,12 +318,12 @@ class DetectionEnv(Env):
 
         # If the size of the history list is smaller than 9, we add the action vector to the history vector.
         if size_history_list < 9:
-            self.actions_history[size_history_list][action] = 1
+            self.actions_history.append(action_vector)
         else:
             # Else we shift the history list by one and we add the action vector to the history vector.
             for i in range(8,0,-1):
-                self.actions_history[i][:] = self.actions_history[i-1][:]
-            self.actions_history[0][:] = action_vector[:]
+                self.actions_history[i] = self.actions_history[i-1].copy()
+            self.actions_history[0] = action_vector
 
         # Returning the history of the actions.
         return self.actions_history
@@ -703,6 +745,8 @@ class DetectionEnv(Env):
         self.classifier = classifier
         self.classifier_target_size = classifier_target_size
 
+        self.current_action = None
+
         # Displaying part (Retrieving a random color for the bounding box).
         self.color = self.generate_random_color()
 
@@ -775,6 +819,9 @@ class DetectionEnv(Env):
 
         # Declaring the reward.
         reward = 0
+
+        # Updating the current action.
+        self.current_action = action
         
         # Checking the action type and applying the action to the image (transform action).
         if action < 8:

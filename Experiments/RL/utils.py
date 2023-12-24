@@ -45,7 +45,7 @@ EPS_DECAY = 0.99
 # The target update frequency is the frequency with which the target network is updated.
 TARGET_UPDATE_FREQ = 5
 # The success criteria is the average reward over the last 50 episodes that the agent must achieve to be considered successful.
-SUCCESS_CRITERIA = 0.9
+SUCCESS_CRITERIA = 0.9#0.92
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
 
