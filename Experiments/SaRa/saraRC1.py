@@ -799,25 +799,49 @@ def reset():
 
 
 
-def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.9):
+def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.2):
     def generate_segments(image, seg_count) -> dict:
+        """
+            Function to generate segments of an image
+
+            Args:
+                image: input image
+                seg_count: number of segments to generate
+
+            Returns:
+                segments: dictionary of segments
+        
+        """
+        # Initializing segments dictionary
         segments = {}
+        # Initializing segment index and segment count
         segment_count = seg_count
         index = 0
 
+        # Retrieving image width and height
         h, w = image.shape[:2]
+
+        # Calculating width and height intervals for segments from the segment count
         w_interval = w // segment_count
         h_interval = h // segment_count
 
+        # Iterating through the image and generating segments
         for i in range(segment_count):
             for j in range(segment_count):
+                # Calculating segment coordinates
                 x1, y1 = j * w_interval, i * h_interval
                 x2, y2 = x1 + w_interval, y1 + h_interval
+
+                # Adding segment coordinates to segments dictionary
                 segments[index] = (x1, y1, x2, y2)
+
+                # Incrementing segment index
                 index += 1
 
+        # Returning segments dictionary
         return segments
 
+    # Retrieving important ranks from SaRa
     sara_dict = {
         info[0]: {
             'score': info[2],
@@ -826,31 +850,43 @@ def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.9):
         for info in sara_info[1]
     }
 
+    # Sorting important ranks by score
     sorted_sara_dict = sorted(sara_dict.items(), key=lambda item: item[1]['score'], reverse=True)
 
+    # Generating segments
     index_info = generate_segments(img, grid_size)
 
+    # Initializing most important ranks image
     most_imp_ranks = np.zeros_like(img)
 
+    # Calculating maximum rank
     max_rank = int(grid_size * grid_size * rate)
     count = 0
-    important_coords = []
 
+    # Iterating through important ranks and adding them to most important ranks image
     for rank, info in sorted_sara_dict:
-        if count >= max_rank:
+        # Checking if rank is within maximum rank
+        if count <= max_rank:
+            # Retrieving segment coordinates
+            coords = index_info[rank]
+
+            # Adding segment to most important ranks image by making it white
+            most_imp_ranks[coords[1]:coords[3], coords[0]:coords[2]] = 255
+
+            # Incrementing count
+            count += 1
+        else:
             break
+    
+    # Retrieving coordinates of most important ranks
+    coords = np.argwhere(most_imp_ranks == 255)
 
-        coords = index_info[info['index']]
-        most_imp_ranks[coords[1]:coords[3], coords[0]:coords[2]] = 255
-        important_coords.append(coords)
-        count += 1
+    # Checking if no important ranks were found and returning original image
+    if coords.size == 0:
+        return img , most_imp_ranks
 
-    if not important_coords:
-        return img
-
-    # Find bounding box of important segments
-    important_coords = np.array(important_coords)
-    x0, y0 = important_coords.min(axis=0)[:2]
-    x1, y1 = important_coords.max(axis=0)[:2] + 1
+    # Cropping image based on most important ranks
+    x0, y0 = coords.min(axis=0)[:2]
+    x1, y1 = coords.max(axis=0)[:2] + 1
     cropped_img = img[x0:x1, y0:y1]
-    return cropped_img
+    return cropped_img , most_imp_ranks, [x0, y0, x1, y1]
