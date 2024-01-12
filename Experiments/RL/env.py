@@ -1015,6 +1015,109 @@ class DetectionEnv(Env):
             # Returning the image.
             return heatmap
         
+    def segment(self, display_mode="mask", do_display=False, text_display=True, alpha=0.7, color=(0, 255, 0)):
+        """
+            Function that segments the object in the bounding box.
+
+            Input:
+                - Whether to display the image or not
+                - Whether to display the text or not
+                - Alpha (transparency of the bounding box)
+                - Color of the bounding box
+
+            Output:
+                - Segment Mask
+        """
+        # Retrieving bounding box coordinates.
+        x1, y1, x2, y2 = self.bbox
+
+        # Creating a black 3-channel mask image.
+        mask = np.zeros_like(self.original_image)
+
+        # Changing to 1-channel mask image.
+        mask = cv2.cvtColor(mask, cv2.COLOR_RGB2GRAY)
+
+        # Extracting the object from the mask.
+        bbox_object = self.original_image[y1:y2, x1:x2]
+
+        # From the bbox_object, we extract the mask via Canny Edge Detection.
+        edges = cv2.Canny(bbox_object, 100, 200)
+
+        # We dilate the edges using a larger kernel and multiple iterations.
+        kernel_dilation = np.ones((5,5),np.uint8)
+        edges = cv2.dilate(edges, kernel_dilation, iterations = 3)
+
+        # We erode the edges using a smaller kernel and fewer iterations.
+        kernel_erosion = np.ones((3,3),np.uint8)
+        edges = cv2.erode(edges, kernel_erosion, iterations = 1)
+
+        # We fill the holes in the edges.
+        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, None)
+
+        # Find contours in the edges
+        contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Draw the contours onto the mask and fill them
+        for contour in contours:
+            cv2.drawContours(mask[y1:y2, x1:x2], [contour], -1, (255), thickness=cv2.FILLED)
+
+        # Apply Gaussian blur to smooth the mask
+        mask = cv2.GaussianBlur(mask, (3, 3), 0)
+
+        # Creating a filled polygon annotation for the object mask on a copy of the original image.
+        image_copy = self.original_image.copy()       
+
+        # Plotting the image.
+        if do_display:
+            if display_mode == "mask":
+                self.plot_img(mask, title='Segmentation Mask')
+
+            elif display_mode == "image":
+                # Creating a filled polygon annotation for the object mask on a copy of the original image.
+                image_copy = self.original_image.copy()
+
+                # Offset the contour points by the top-left coordinates of the bounding box
+                contour_offset = contour + np.array([x1, y1])
+
+                cv2.fillPoly(image_copy, pts=[contour_offset], color=self.color)
+
+                # Blending the image with the rectangle using cv2.addWeighted
+                image = cv2.addWeighted(self.image, 1 - alpha, image_copy, alpha, 0)
+
+                # Adding a rectangle outline to the image
+                cv2.rectangle(image, (x1, y1), (x2, y2), self.color, 3)
+
+                if text_display and self.label is not None:
+                    # Setting the font and the font scale
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 1.2
+                    
+                    text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
+
+                    # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+                    (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+
+                    # Ensuring that the label doesn't go out of bounds
+                    if y1 - label_height - baseline < 0:
+                        y1 = label_height + baseline
+                    if x1 + label_width > image.shape[1]:
+                        x1 = image.shape[1] - label_width
+                    if y1 + label_height + baseline > image.shape[0]:
+                        y1 = image.shape[0] - label_height - baseline
+                    if x1 < 0:
+                        x1 = 0
+
+                    # Creating a filled rectangle for the label background
+                    cv2.rectangle(image, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+
+                    # Adding the label text to the image
+                    cv2.putText(image, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+
+                self.plot_img(image, title='Instance Segmentation')
+
+        # Returning the image mask.
+        return mask
+        
     def plot_img(self, image, title=None):
         """
             Function that plots the image.
@@ -1027,7 +1130,7 @@ class DetectionEnv(Env):
         plt.imshow(image, cmap='gray')
         plt.axis('off')
         if title is not None:
-            plt.title(title)
+            plt.title(title, fontsize=14)
         plt.show()
         
     def close(self):
