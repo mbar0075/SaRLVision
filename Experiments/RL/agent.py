@@ -291,6 +291,9 @@ class DQNAgent():
         torch.save(self.policy_net.state_dict(), path + "/policy_net.pth")
         torch.save(self.target_net.state_dict(), path + "/target_net.pth")
 
+        # Saving optimizer state
+        torch.save(self.optimizer.state_dict(), path + "/optimizer.pth")
+
         # Saving the episode info
         np.save(path + "/episode_info.npy", self.episode_info)
 
@@ -303,6 +306,12 @@ class DQNAgent():
         # Loading the model
         self.policy_net.load_state_dict(torch.load(path + "/policy_net.pth"))
         self.target_net.load_state_dict(torch.load(path + "/target_net.pth"))
+
+        self.policy_net.to(device)
+        self.target_net.to(device)
+
+        # Loading optimizer state
+        self.optimizer.load_state_dict(torch.load(path + "/optimizer.pth"))
 
         # Loading the episode info
         self.episode_info = np.load(path + "/episode_info.npy", allow_pickle=True).item()

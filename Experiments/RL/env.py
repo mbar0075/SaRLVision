@@ -14,7 +14,7 @@ import pygame
 
 ACTION_HISTORY = [[100]*9]*20
 NU = 3.0
-THRESHOLD = 1.0 #1.0
+THRESHOLD = 1.0#0.95
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
 ALPHA = 0.1#0.1 #0.15
@@ -288,8 +288,8 @@ class DetectionEnv(Env):
         action_history = torch.tensor(self.actions_history, dtype=dtype).flatten().view(1, -1)
 
         # Appending bounding box coordinates to the beginning of the action history.
-        # action_history = torch.cat((torch.tensor(self.bbox, dtype=dtype).view(1, -1), action_history), 1)
-        action_history = torch.tensor(self.bbox, dtype=dtype).view(1, -1)
+        action_history = torch.cat((torch.tensor(self.bbox, dtype=dtype).view(1, -1), action_history), 1)
+        # action_history = torch.tensor(self.bbox, dtype=dtype).view(1, -1)
 
         # Concatenating the features and the action history.
         state = torch.cat((action_history, features), 1)
