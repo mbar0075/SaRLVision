@@ -316,6 +316,8 @@ class DQNAgent():
         # Loading the episode info
         self.episode_info = np.load(path + "/episode_info.npy", allow_pickle=True).item()
 
+        self.epsilon = EPS_END
+
     def get_episode_info(self):
         """ Returns the episode info """
         return self.episode_info

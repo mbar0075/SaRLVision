@@ -11,6 +11,17 @@ import time
 import math
 import colorsys
 import pygame
+import os
+
+# Importing SaRa
+import SaRa.saraRC1 as sara
+generator = 'itti'
+GRID_SIZE =  8
+
+# Importing Mask To Annotation
+import MaskToAnnotation.coco as coco
+import MaskToAnnotation.yolo as yolo
+import MaskToAnnotation.vgg as vgg
 
 ACTION_HISTORY = [[100]*9]*20
 NU = 3.0
@@ -1067,10 +1078,26 @@ class DetectionEnv(Env):
         # Creating a filled polygon annotation for the object mask on a copy of the original image.
         image_copy = self.original_image.copy()       
 
+        # SaRa algorithm
+        sara.reset()
+        # Calculating Itti Saliency Map
+        saliency_map_itti = sara.return_saliency(image_copy.copy(), generator=generator)
+        saliency_map_rgb_itti = cv2.cvtColor(saliency_map_itti, cv2.COLOR_BGR2RGB)
+        saliency_map_gray_itti = cv2.cvtColor(saliency_map_rgb_itti, cv2.COLOR_RGB2GRAY)
+
+        # Thresholding the saliency map using Otsu's method
+        ret, thresh_itti = cv2.threshold(saliency_map_gray_itti, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Performing morphological operations on the thresholded image
+        kernel = np.ones((5,5), np.uint8)
+        dilated = cv2.dilate(thresh_itti, kernel, iterations=2)
+        erosion = cv2.erode(dilated, kernel, iterations=2)
+
         # Plotting the image.
         if do_display:
             if display_mode == "mask":
-                self.plot_img(mask, title='Segmentation Mask')
+                self.plot_img(mask, title='Segmented Object Mask')
+                self.plot_img(erosion, title='Thresholded Itti Saliency Map')
 
             elif display_mode == "image":
                 # Creating a filled polygon annotation for the object mask on a copy of the original image.
@@ -1117,6 +1144,23 @@ class DetectionEnv(Env):
 
         # Returning the image mask.
         return mask
+    
+    def annotate(self, image, id, title, project_name, save_dir, annotation_format="coco", do_display=False, do_save=False, do_print=True, annotation_color=(255, 0, 255), epsilon=0.005, configuration=coco.POLY_APPROX, object_configuration=coco.SINGLE_OBJ, do_cvt=True):
+        # Setting the category as the label.
+        category = self.label
+
+        # Setting the annotation color.
+        annotation_color = self.color
+
+        # Checking the annotation format.
+        if annotation_format == "coco":
+            coco.annotate((id, title, image, project_name, category, save_dir), do_display=do_display, do_save=do_save, do_print=do_print, annotation_color=annotation_color, epsilon=epsilon, configuration=configuration, object_configuration=object_configuration, do_cvt=do_cvt)
+        elif annotation_format == "vgg":
+            vgg.annotate((id, title, image, project_name, category, save_dir), do_display=do_display, do_save=do_save, do_print=do_print, annotation_color=annotation_color, epsilon=epsilon, configuration=configuration, object_configuration=object_configuration, do_cvt=do_cvt)
+        elif annotation_format == "yolo":
+            yolo.annotate((id, title, image, project_name, category, save_dir), do_display=do_display, do_save=do_save, do_print=do_print, annotation_color=annotation_color, object_configuration=object_configuration, do_cvt=do_cvt)
+        else:
+            raise Exception("Unknown annotation format.")
         
     def plot_img(self, image, title=None):
         """
