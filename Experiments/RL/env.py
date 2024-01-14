@@ -22,6 +22,7 @@ GRID_SIZE =  8
 import MaskToAnnotation.coco as coco
 import MaskToAnnotation.yolo as yolo
 import MaskToAnnotation.vgg as vgg
+import MaskToAnnotation.annotation_helper as ah
 
 ACTION_HISTORY = [[100]*9]*20
 NU = 3.0
@@ -29,7 +30,7 @@ THRESHOLD = 1.0#0.95
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
 ALPHA = 0.1#0.1 #0.15
-MAX_STEPS = 100#200
+MAX_STEPS = 50#100#200
 RENDER_MODE = "rgb_array" #None
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
@@ -408,9 +409,10 @@ class DetectionEnv(Env):
         # alpha_h = int(self.alpha * (ymax - ymin)) + int(self.step_count * self.alpha * (ymax - ymin) / self.max_steps)
         # alpha_w = int(self.alpha * (xmax - xmin)) + int(self.step_count * self.alpha * (xmax - xmin) / self.max_steps)
 
-        alpha_h = int(self.alpha * (ymax - ymin))
-        alpha_w = int(self.alpha * (xmax - xmin))
-
+        # alpha_h = int(self.alpha * (ymax - ymin))
+        # alpha_w = int(self.alpha * (xmax - xmin))
+        alpha_h = int(1/self.step_count * (ymax - ymin))
+        alpha_w = int(1/self.step_count * (xmax - xmin))
         # If the action is 0, move X1 to the left.
         if action == 0:
             xmin -= alpha_w
@@ -1050,27 +1052,28 @@ class DetectionEnv(Env):
 
         # Extracting the object from the mask.
         bbox_object = self.original_image[y1:y2, x1:x2]
-
+        
         # From the bbox_object, we extract the mask via Canny Edge Detection.
-        edges = cv2.Canny(bbox_object, 100, 200)
+        edges = cv2.Canny(bbox_object, 0, 100)
 
-        # We dilate the edges using a larger kernel and multiple iterations.
-        kernel_dilation = np.ones((5,5),np.uint8)
-        edges = cv2.dilate(edges, kernel_dilation, iterations = 3)
+        # Creating a copy of the mask.
+        mask_copy = mask.copy()
 
-        # We erode the edges using a smaller kernel and fewer iterations.
-        kernel_erosion = np.ones((3,3),np.uint8)
-        edges = cv2.erode(edges, kernel_erosion, iterations = 1)
-
-        # We fill the holes in the edges.
-        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, None)
-
-        # Find contours in the edges
-        contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        # Mapping the edges to the mask.
+        mask_copy[y1:y2, x1:x2] = edges
+        
+        # Retrieving the contours of the mask.
+        contours = ah.single_object_polygon_approximation(mask_copy, epsilon=0.005, do_cvt=False)
 
         # Draw the contours onto the mask and fill them
-        for contour in contours:
-            cv2.drawContours(mask[y1:y2, x1:x2], [contour], -1, (255), thickness=cv2.FILLED)
+        cv2.fillPoly(mask, pts=contours, color=(255, 255, 255))
+        
+        # Define a larger structuring element
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
+
+        # Apply the closing operation multiple times
+        for _ in range(10):  # Change this number to apply the operation more or less times
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
         # Apply Gaussian blur to smooth the mask
         mask = cv2.GaussianBlur(mask, (3, 3), 0)
@@ -1103,10 +1106,10 @@ class DetectionEnv(Env):
                 # Creating a filled polygon annotation for the object mask on a copy of the original image.
                 image_copy = self.original_image.copy()
 
-                # Offset the contour points by the top-left coordinates of the bounding box
-                contour_offset = contour + np.array([x1, y1])
+                # Calculating contours of the mask
+                contours_mask, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-                cv2.fillPoly(image_copy, pts=[contour_offset], color=self.color)
+                cv2.fillPoly(image_copy, pts=contours_mask, color=self.color)
 
                 # Blending the image with the rectangle using cv2.addWeighted
                 image = cv2.addWeighted(self.image, 1 - alpha, image_copy, alpha, 0)
