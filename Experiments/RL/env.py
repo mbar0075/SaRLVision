@@ -12,6 +12,7 @@ import math
 import colorsys
 import pygame
 import os
+import sys
 
 # Importing SaRa
 import SaRa.saraRC1 as sara
@@ -36,8 +37,8 @@ FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
 CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
-WINDOW_SIZE = 500
-SIZE = 224
+WINDOW_SIZE = (800, 600)
+SIZE = (80, 60)
 REWARD_FUNC = iou
 ACTION_MODE =1 #0  
 
@@ -133,16 +134,20 @@ class DetectionEnv(Env):
 
         # For rendering
         assert render_mode is None or render_mode in self.metadata["render_modes"]
-        if render_mode is None:
-            self.is_render = False
-        else:
-            self.is_render = True
         self.render_mode = render_mode
-        self.window_size = WINDOW_SIZE
-        self.size = SIZE
+
+        self.window_size = (self.width, self.height) #WINDOW_SIZE
+        self.size = SIZE  # Set size to one-tenth of the image dimensions
         self.window = None
         self.clock = None
+        self.is_render = False
 
+        if render_mode is not None:
+            self.is_render = True
+            pygame.init()
+            self.render_mode = render_mode
+            self.window = pygame.display.set_mode(self.window_size)
+            self.clock = pygame.time.Clock()
         # For opposite actions
         self.current_action = None
 
@@ -758,6 +763,11 @@ class DetectionEnv(Env):
         self.classifier = classifier
         self.classifier_target_size = classifier_target_size
 
+        if self.is_render:
+            self.window_size = (self.width, self.height) #WINDOW_SIZE
+            self.window = pygame.display.set_mode(self.window_size)
+            self.clock = pygame.time.Clock()
+
         self.current_action = None
 
         # Displaying part (Retrieving a random color for the bounding box).
@@ -874,65 +884,123 @@ class DetectionEnv(Env):
         if self.terminated or self.truncated:
             self.num_episodes += 1
 
+        if self.is_render:
+            self.render(self.render_mode)
+
         # Returning the state of the environment, the reward, whether the episode is finished or not, whether the episode is truncated or not and the information of the environment.
         return self.get_state(), reward, self.terminated, self.truncated, self.get_info()
     
-    def render(self, mode='rgb_array'):
-        if self.window is None:
-            pygame.init()
-            pygame.display.init()
-            self.window = pygame.display.set_mode((self.window_size, self.window_size))
-        if self.clock is None:
-            self.clock = pygame.time.Clock()
-        
-        return self._render_frame(mode=mode)
+    def decode_render_action_1(self, action):
+        """
+        Function that decodes the action.
 
-    def _render_frame(self, mode='rgb_array', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):
+        Input:
+            - Action to decode
+
+        Output:
+            - Decoded action as a string
+        """
+        # If the action is 0, return the name of the action.
+        if action == 0:
+            return "Move right"
+        # If the action is 1, return the name of the action.
+        elif action == 1:
+            return "Move left"
+        # If the action is 2, return the name of the action.
+        elif action == 2:
+            return "Move up"
+        # If the action is 3, return the name of the action.
+        elif action == 3:
+            return "Move down"
+        # If the action is 4, return the name of the action.
+        elif action == 4:
+            return "Make bigger"
+        # If the action is 5, return the name of the action.
+        elif action == 5:
+            return "Make smaller"
+        # If the action is 6, return the name of the action.
+        elif action == 6:
+            return "Make fatter"
+        # If the action is 7, return the name of the action.
+        elif action == 7:
+            return "Make taller"
+        # If the action is 8, return the name of the action.
+        elif action == 8:
+            return "Trigger"
+        else:
+            return "Unknown Action"
+
+    
+    def _render_frame(self, mode='human', close=False):
         # Retrieving bounding box coordinates.
-        x1, y1, x2, y2 = self.bbox
+        x1, y1, x2, y2 = self.bbox  # Make sure self.bbox is defined in your environment
 
         # Create a Pygame Surface to render on
-        canvas = pygame.Surface((self.window_size, self.window_size))
+        canvas = pygame.Surface((self.window_size[0], self.window_size[1]))
 
         # Checking the mode of rendering.
-        if mode == 'rgb_array':
-            # Fill the canvas with white color
-            canvas.fill((255, 255, 255))
+        if mode == 'human':
+            # Convert the NumPy array to a Pygame surface
+            img = self.original_image.copy()
 
-            # Create a filled rectangle for the bounding box
-            pygame.draw.rect(canvas, self.color, (x1, y1, x2 - x1, y2 - y1), 0)
-            pygame.draw.rect(canvas, self.color, (x1, y1, x2 - x1, y2 - y1), 3)
+            # Draw bounding box on the image
+            cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
 
-            # Adding the label to the image
-            if text_display and self.label is not None:
-                font = pygame.font.Font(None, 30)
-                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
-                text_surface = font.render(text, True, (255, 255, 255))
-                canvas.blit(text_surface, (x1, y1))
+            image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
 
-        elif mode == 'bbox':
-            # Fill the canvas with black color
-            canvas.fill((0, 0, 0))
+            # Displaying Action on image surface at the top left corner
+            font = pygame.font.SysFont('Lato', 50)#, bold=True)
 
-            # Create a rectangle for the bounding box
-            pygame.draw.rect(canvas, color, (x1, y1, x2 - x1, y2 - y1), 0)
+            text = font.render('Action: ' + str(self.decode_render_action_1(self.current_action)), True, (255, 255, 255))
+            image_surface.blit(text, (0, 0))
 
-        elif mode == 'heatmap':
-            # Fill the canvas with black color
-            canvas.fill((0, 0, 0))
+            # Add Step | Reward | IoU  on the image surface at the bottom left corner
+            font = pygame.font.SysFont('Lato', 20)#, bold=True)
 
-            # Create a rectangle for the bounding box
-            pygame.draw.rect(canvas, color, (x1, y1, x2 - x1, y2 - y1), 0)
-            # Apply color map to the rectangle
-            heatmap = cv2.applyColorMap(canvas, cv2.COLORMAP_JET)
-            canvas = pygame.surfarray.make_surface(heatmap.swapaxes(0, 1))
+            text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)), True, (255, 255, 255))
+            image_surface.blit(text, (0, self.window_size[1] - 20))
 
-        if do_display:
+
+            # Draw the original image on the canvas
+            canvas.blit(image_surface, (0, 0))
+
             # Display the frame
             self.window.blit(canvas, (0, 0))
-            pygame.display.update()
+            pygame.display.flip()
 
-        return pygame.surfarray.array3d(canvas)
+            # Process Pygame events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.close()
+
+            self.clock.tick(10)  # Adjust the frame rate as needed
+
+            # Return the image surface as a NumPy array
+            return np.swapaxes(pygame.surfarray.array3d(image_surface), 0, 1)
+
+        elif mode == 'rgb_array':
+            # Create an RGB array for Gym rendering
+            rgb_array = np.zeros((self.window_size[1], self.window_size[0], 3), dtype=np.uint8)
+
+            # Draw bounding box on the RGB array
+            cv2.rectangle(rgb_array, (x1, y1), (x2, y2), self.color, 3)
+
+            # Adding Action on the RGB array at the top left corner
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(rgb_array, 'Action: ' + str(self.decode_render_action_1(self.current_action)),
+                        (10, 40), font, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Adding Step | Reward | IoU on the RGB array at the bottom left corner
+            cv2.putText(rgb_array, 'Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) +
+                        ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)),
+                        (10, self.window_size[1] - 20), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+
+            return rgb_array
+
+        return np.array(pygame.surfarray.array3d(canvas))
+
+    def render(self, mode='human', close=False):
+        return self._render_frame(mode, close)
     
     def display(self, mode='image', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):
         """

@@ -1,0 +1,50 @@
+{
+    "info": {
+        "description": "Object Detection"
+    },
+    "images": [
+        {
+            "id": 0,
+            "width": 1280,
+            "height": 720,
+            "file_name": "Mask Name"
+        }
+    ],
+    "annotations": [
+        {
+            "id": 0,
+            "iscrowd": 0,
+            "image_id": 0,
+            "category_id": 0,
+            "segmentation": [
+                [
+                    765.0,
+                    265.0,
+                    585.0,
+                    270.0,
+                    586.0,
+                    624.0,
+                    597.0,
+                    636.0,
+                    630.0,
+                    641.0,
+                    769.0,
+                    580.0
+                ]
+            ],
+            "bbox": [
+                585,
+                265,
+                185,
+                377
+            ],
+            "area": 63467.0
+        }
+    ],
+    "categories": [
+        {
+            "id": 0,
+            "name": "book_jacket"
+        }
+    ]
+}

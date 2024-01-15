@@ -5,6 +5,7 @@ import os
 import time
 import renderlab as rl
 import gymnasium as gym
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
@@ -251,15 +252,18 @@ class DQNAgent():
 
 
     def test(self):
-        """ Tests the trained agent """
-        # Importing renderlab
-        import renderlab as rl
-
-        # Setting renderlab
-        env = rl.RenderFrame(self.env, "./video")
+        """ Tests the trained agent and creates an MP4 video """
+        # OpenCV video settings
+        video_filename = 'output_video.mp4'
+        width = self.env.width
+        height = self.env.height
+        video_writer = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*'mp4v'), 5, (width, height))# 5 fps, lower is better
 
         # Resetting the environment
         obs, _ = self.env.reset()
+
+        # Collecting frames for video creation
+        frames = []
 
         # Playing the environment
         while True:
@@ -269,12 +273,21 @@ class DQNAgent():
             # Taking a step in the environment
             obs, _, terminated, truncated, _ = self.env.step(action)
 
+            # Render the frame
+            frame = self.env.render()
+            frames.append(frame)
+
             # Setting done to terminated or truncated
             if terminated or truncated:
                 break
+
+        # Save frames to video
+        for frame in frames:
+            video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         
-        # Playing the video
-        self.env.play()
+        # Release video writer
+        video_writer.release()
+        print(f"Video saved to {video_filename}")
 
 
     def save(self, path="models/dqn"):

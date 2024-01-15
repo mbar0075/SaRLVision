@@ -1,0 +1,35 @@
+{
+    "Mask Name": {
+        "fileref": "",
+        "size": 1280,
+        "filename": "Mask Name",
+        "base64_img_data": "",
+        "file_attributes": {},
+        "regions": {
+            "0": {
+                "shape_attributes": {
+                    "name": "polygon",
+                    "all_points_x": [
+                        765,
+                        585,
+                        586,
+                        597,
+                        630,
+                        769
+                    ],
+                    "all_points_y": [
+                        265,
+                        270,
+                        624,
+                        636,
+                        641,
+                        580
+                    ]
+                },
+                "region_attributes": {
+                    "label": "1"
+                }
+            }
+        }
+    }
+}
