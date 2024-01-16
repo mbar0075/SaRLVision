@@ -27,12 +27,12 @@ import MaskToAnnotation.annotation_helper as ah
 
 ACTION_HISTORY = [[100]*9]*20
 NU = 3.0
-THRESHOLD = 1.0#0.95
+THRESHOLD = 0.9#0.95
 MAX_THRESHOLD = 1.0
 GROWTH_RATE = 0.0009
 ALPHA = 0.1#0.1 #0.15
 MAX_STEPS = 50#100#200
-RENDER_MODE = "rgb_array" #None
+RENDER_MODE = 'human'# None, 'rgb_array', 'bbox', 'sara'
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
 CLASSIFIER = ResNet50V2()
@@ -41,9 +41,10 @@ WINDOW_SIZE = (800, 600)
 SIZE = (80, 60)
 REWARD_FUNC = iou
 ACTION_MODE =1 #0  
+ENV_MODE = 0 # 0 for training, 1 for testing
 
 class DetectionEnv(Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+    metadata = {"render_modes": ["human", "rgb_array", "bbox", "sara"], "render_fps": 1}
     reward_penalty_dict = {
         0: 1,
         1: 0,
@@ -150,6 +151,21 @@ class DetectionEnv(Env):
             self.clock = pygame.time.Clock()
         # For opposite actions
         self.current_action = None
+
+        # For environment mode
+        self.env_mode = ENV_MODE
+
+    def train(self):
+        """
+            Function that sets the environment mode to training.
+        """
+        self.env_mode = 0
+
+    def test(self):
+        """
+            Function that sets the environment mode to testing.
+        """
+        self.env_mode = 1
 
     def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=REWARD_FUNC):
         """
@@ -928,10 +944,10 @@ class DetectionEnv(Env):
         elif action == 8:
             return "Trigger"
         else:
-            return "Unknown Action"
+            return "N/A"
 
     
-    def _render_frame(self, mode='human', close=False):
+    def _render_frame(self, mode='human', close=False, alpha=0.2):
         # Retrieving bounding box coordinates.
         x1, y1, x2, y2 = self.bbox  # Make sure self.bbox is defined in your environment
 
@@ -939,11 +955,41 @@ class DetectionEnv(Env):
         canvas = pygame.Surface((self.window_size[0], self.window_size[1]))
 
         # Checking the mode of rendering.
-        if mode == 'human':
+        if mode == 'human' or mode == 'sara':
             # Convert the NumPy array to a Pygame surface
             img = self.original_image.copy()
 
-            # Draw bounding box on the image
+            if mode == 'sara':
+                img = self.image.copy()
+
+            # Creating target bounding box
+            if self.env_mode == 0:
+                # Creating a different color for the target bounding box from the current bounding box
+                target_color = (0, 255, 0) if self.color != (0, 255, 0) else (255, 0, 0)
+
+                # cv2.rectangle(img, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, 3)
+                # Creating a copy of the image
+                image_copy = img.copy()
+
+                # Creating a filled rectangle for the target bounding box
+                cv2.rectangle(image_copy, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, cv2.FILLED)
+
+                # Blending the image with the rectangle using cv2.addWeighted
+                img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
+
+                # Adding a rectangle outline to the image
+                cv2.rectangle(img, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, 3)
+
+            # Creating a copy of the image
+            image_copy = img.copy()
+
+            # Creating a filled rectangle for the bounding box
+            cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
+
+            # Blending the image with the rectangle using cv2.addWeighted
+            img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
+
+            # Adding a rectangle outline to the image
             cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
 
             image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
@@ -954,12 +1000,28 @@ class DetectionEnv(Env):
             text = font.render('Action: ' + str(self.decode_render_action_1(self.current_action)), True, (255, 255, 255))
             image_surface.blit(text, (0, 0))
 
-            # Add Step | Reward | IoU  on the image surface at the bottom left corner
-            font = pygame.font.SysFont('Lato', 20)#, bold=True)
+            if self.env_mode == 0:
+                # Add Step | Reward | IoU  on the image surface at the bottom left corner
+                font = pygame.font.SysFont('Lato', 20)#, bold=True)
 
-            text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)), True, (255, 255, 255))
-            image_surface.blit(text, (0, self.window_size[1] - 20))
+                text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)), True, (255, 255, 255))
+                image_surface.blit(text, (0, self.window_size[1] - 20))
 
+                # Create font with Lato, size 30
+                font = pygame.font.SysFont('Lato', 30)
+
+                # Adding bottom right legend for bounding box colors
+                # Marker for Ground Truth (using a rectangular marker)
+                target_marker_size = 20
+                pygame.draw.rect(image_surface, target_color, (self.window_size[0] - 180, self.window_size[1] - 20, target_marker_size, target_marker_size))
+                label_text = font.render('Ground Truth', True, target_color)
+                image_surface.blit(label_text, (self.window_size[0] - 150, self.window_size[1] - 20))
+
+                # Marker for Prediction (using a circular marker)
+                prediction_marker_size = 20
+                pygame.draw.circle(image_surface, self.color, (self.window_size[0] - 330 + prediction_marker_size//2, self.window_size[1] - 20 + prediction_marker_size//2), prediction_marker_size//2)
+                label_text = font.render('Prediction', True, self.color)
+                image_surface.blit(label_text, (self.window_size[0] - 300, self.window_size[1] - 20))
 
             # Draw the original image on the canvas
             canvas.blit(image_surface, (0, 0))
@@ -977,7 +1039,89 @@ class DetectionEnv(Env):
 
             # Return the image surface as a NumPy array
             return np.swapaxes(pygame.surfarray.array3d(image_surface), 0, 1)
+        
+        elif mode == 'bbox':
+            alpha = 0.7
+            # Convert the NumPy array to a Pygame surface
+            img = np.zeros_like(self.original_image)
 
+            # Creating target bounding box
+            if self.env_mode == 0:
+                # Creating a different color for the target bounding box from the current bounding box
+                target_color = (0, 255, 0) if self.color != (0, 255, 0) else (255, 0, 0)
+
+                # cv2.rectangle(img, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, 3)
+                # Creating a copy of the image
+                image_copy = img.copy()
+
+                # Creating a filled rectangle for the target bounding box
+                cv2.rectangle(image_copy, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, cv2.FILLED)
+
+                # Blending the image with the rectangle using cv2.addWeighted
+                img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
+
+                # Adding a rectangle outline to the image
+                cv2.rectangle(img, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, 3)
+
+            # Creating a copy of the image
+            image_copy = img.copy()
+
+            # Creating a filled rectangle for the bounding box
+            cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
+
+            # Blending the image with the rectangle using cv2.addWeighted
+            img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
+
+            # Adding a rectangle outline to the image
+            cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
+
+            image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
+
+            # Displaying Action on image surface at the top left corner
+            font = pygame.font.SysFont('Lato', 50)#, bold=True)
+
+            text = font.render('Action: ' + str(self.decode_render_action_1(self.current_action)), True, (255, 255, 255))
+            image_surface.blit(text, (0, 0))
+
+            if self.env_mode == 0:
+                # Add Step | Reward | IoU  on the image surface at the bottom left corner
+                font = pygame.font.SysFont('Lato', 20)#, bold=True)
+
+                text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)), True, (255, 255, 255))
+                image_surface.blit(text, (0, self.window_size[1] - 20))
+
+                # Create font with Lato, size 30
+                font = pygame.font.SysFont('Lato', 30)
+
+                # Adding bottom right legend for bounding box colors
+                # Marker for Ground Truth (using a rectangular marker)
+                target_marker_size = 20
+                pygame.draw.rect(image_surface, target_color, (self.window_size[0] - 180, self.window_size[1] - 20, target_marker_size, target_marker_size))
+                label_text = font.render('Ground Truth', True, target_color)
+                image_surface.blit(label_text, (self.window_size[0] - 150, self.window_size[1] - 20))
+
+                # Marker for Prediction (using a circular marker)
+                prediction_marker_size = 20
+                pygame.draw.circle(image_surface, self.color, (self.window_size[0] - 330 + prediction_marker_size//2, self.window_size[1] - 20 + prediction_marker_size//2), prediction_marker_size//2)
+                label_text = font.render('Prediction', True, self.color)
+                image_surface.blit(label_text, (self.window_size[0] - 300, self.window_size[1] - 20))
+
+            # Draw the original image on the canvas
+            canvas.blit(image_surface, (0, 0))
+
+            # Display the frame
+            self.window.blit(canvas, (0, 0))
+            pygame.display.flip()
+
+            # Process Pygame events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.close()
+
+            self.clock.tick(10)  # Adjust the frame rate as needed
+
+            # Return the image surface as a NumPy array
+            return np.swapaxes(pygame.surfarray.array3d(image_surface), 0, 1)
         elif mode == 'rgb_array':
             # Create an RGB array for Gym rendering
             rgb_array = np.zeros((self.window_size[1], self.window_size[0], 3), dtype=np.uint8)
@@ -999,7 +1143,7 @@ class DetectionEnv(Env):
 
         return np.array(pygame.surfarray.array3d(canvas))
 
-    def render(self, mode='human', close=False):
+    def render(self, mode=RENDER_MODE, close=False):
         return self._render_frame(mode, close)
     
     def display(self, mode='image', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):

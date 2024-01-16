@@ -251,19 +251,26 @@ class DQNAgent():
         self.train()
 
 
-    def test(self):
+    def test(self, file_path='dqn_render',video_filename='output_video.mp4'):
         """ Tests the trained agent and creates an MP4 video """
         # OpenCV video settings
-        video_filename = 'output_video.mp4'
+        
         width = self.env.width
         height = self.env.height
-        video_writer = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*'mp4v'), 5, (width, height))# 5 fps, lower is better
+        # Creating path if it does not exist
+        if not os.path.exists(file_path):
+            os.makedirs(file_path)
+
+        # Appending the file name to the path
+        video_filename = os.path.join(file_path, video_filename)
+        video_writer = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*'mp4v'), 3, (width, height))# 5 fps, lower is better
 
         # Resetting the environment
         obs, _ = self.env.reset()
 
         # Collecting frames for video creation
         frames = []
+        frames.append(self.env.render())# Initial frame
 
         # Playing the environment
         while True:
@@ -287,7 +294,7 @@ class DQNAgent():
         
         # Release video writer
         video_writer.release()
-        print(f"Video saved to {video_filename}")
+        print('\033[92mVideo saved to:\033[0m {}'.format(video_filename))
 
 
     def save(self, path="models/dqn"):
