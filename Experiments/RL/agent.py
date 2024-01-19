@@ -288,6 +288,12 @@ class DQNAgent():
             if terminated or truncated:
                 break
 
+        # Predicted bounding box
+        pred_bbox = self.env.predict(do_display=False)
+
+        # Add final frame
+        frames.append(self.env.render())# Final frame with label
+
         # Save frames to video
         for frame in frames:
             video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))

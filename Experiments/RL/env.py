@@ -44,7 +44,7 @@ ACTION_MODE =1 #0
 ENV_MODE = 0 # 0 for training, 1 for testing
 
 class DetectionEnv(Env):
-    metadata = {"render_modes": ["human", "rgb_array", "bbox", "sara"], "render_fps": 1}
+    metadata = {"render_modes": ["human", "rgb_array", "bbox", "sara"], "render_fps": 3}
     reward_penalty_dict = {
         0: 1,
         1: 0,
@@ -148,6 +148,7 @@ class DetectionEnv(Env):
             pygame.init()
             self.render_mode = render_mode
             self.window = pygame.display.set_mode(self.window_size)
+            pygame.display.set_caption("Detection Environment")
             self.clock = pygame.time.Clock()
         # For opposite actions
         self.current_action = None
@@ -827,15 +828,15 @@ class DetectionEnv(Env):
         # Returning the label and the confidence.
         return self.label, self.label_confidence
     
-    def predict(self):
+    def predict(self, do_display=True):
         """
             Function that predicts the label of the image.
         """
         # Retrieving the label and the confidence of the image.
         self.get_label()
-
+        
         # Displaying the image.
-        image = self.display(mode='image', do_display=True, text_display=True)
+        image = self.display(mode='image', do_display=do_display, text_display=True)
         
         # Returning the image.
         return image
@@ -947,7 +948,7 @@ class DetectionEnv(Env):
             return "N/A"
 
     
-    def _render_frame(self, mode='human', close=False, alpha=0.2):
+    def _render_frame(self, mode='human', close=False, alpha=0.3, text_display=True):
         # Retrieving bounding box coordinates.
         x1, y1, x2, y2 = self.bbox  # Make sure self.bbox is defined in your environment
 
@@ -991,6 +992,33 @@ class DetectionEnv(Env):
 
             # Adding a rectangle outline to the image
             cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
+
+            # Adding the label to the image
+            if text_display and self.label is not None:
+                # Setting the font and the font scale
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.2
+                
+                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
+
+                # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+                (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+
+                # Ensuring that the label doesn't go out of bounds
+                if y1 - label_height - baseline < 0:
+                    y1 = label_height + baseline
+                if x1 + label_width > img.shape[1]:
+                    x1 = img.shape[1] - label_width
+                if y1 + label_height + baseline > img.shape[0]:
+                    y1 = img.shape[0] - label_height - baseline
+                if x1 < 0:
+                    x1 = 0
+
+                # Creating a filled rectangle for the label background
+                cv2.rectangle(img, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+
+                # Adding the label text to the image
+                cv2.putText(img, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
 
             image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
 
@@ -1075,6 +1103,33 @@ class DetectionEnv(Env):
             # Adding a rectangle outline to the image
             cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
 
+            # Adding the label to the image
+            if text_display and self.label is not None:
+                # Setting the font and the font scale
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.2
+                
+                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
+
+                # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+                (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+
+                # Ensuring that the label doesn't go out of bounds
+                if y1 - label_height - baseline < 0:
+                    y1 = label_height + baseline
+                if x1 + label_width > img.shape[1]:
+                    x1 = img.shape[1] - label_width
+                if y1 + label_height + baseline > img.shape[0]:
+                    y1 = img.shape[0] - label_height - baseline
+                if x1 < 0:
+                    x1 = 0
+
+                # Creating a filled rectangle for the label background
+                cv2.rectangle(img, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+
+                # Adding the label text to the image
+                cv2.putText(img, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+
             image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
 
             # Displaying Action on image surface at the top left corner
@@ -1144,6 +1199,7 @@ class DetectionEnv(Env):
         return np.array(pygame.surfarray.array3d(canvas))
 
     def render(self, mode=RENDER_MODE, close=False):
+        mode = self.render_mode
         return self._render_frame(mode, close)
     
     def display(self, mode='image', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):
