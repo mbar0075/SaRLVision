@@ -956,12 +956,16 @@ class DetectionEnv(Env):
         canvas = pygame.Surface((self.window_size[0], self.window_size[1]))
 
         # Checking the mode of rendering.
-        if mode == 'human' or mode == 'sara':
+        if mode == 'human' or mode == 'sara' or mode == 'bbox':
             # Convert the NumPy array to a Pygame surface
             img = self.original_image.copy()
 
             if mode == 'sara':
                 img = self.image.copy()
+
+            if mode == 'bbox':
+                img = np.zeros_like(self.original_image)
+                alpha = 0.7
 
             # Creating target bounding box
             if self.env_mode == 0:
@@ -1068,115 +1072,6 @@ class DetectionEnv(Env):
             # Return the image surface as a NumPy array
             return np.swapaxes(pygame.surfarray.array3d(image_surface), 0, 1)
         
-        elif mode == 'bbox':
-            alpha = 0.7
-            # Convert the NumPy array to a Pygame surface
-            img = np.zeros_like(self.original_image)
-
-            # Creating target bounding box
-            if self.env_mode == 0:
-                # Creating a different color for the target bounding box from the current bounding box
-                target_color = (0, 255, 0) if self.color != (0, 255, 0) else (255, 0, 0)
-
-                # cv2.rectangle(img, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, 3)
-                # Creating a copy of the image
-                image_copy = img.copy()
-
-                # Creating a filled rectangle for the target bounding box
-                cv2.rectangle(image_copy, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, cv2.FILLED)
-
-                # Blending the image with the rectangle using cv2.addWeighted
-                img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
-
-                # Adding a rectangle outline to the image
-                cv2.rectangle(img, (self.target_bbox[0], self.target_bbox[1]), (self.target_bbox[2], self.target_bbox[3]), target_color, 3)
-
-            # Creating a copy of the image
-            image_copy = img.copy()
-
-            # Creating a filled rectangle for the bounding box
-            cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
-
-            # Blending the image with the rectangle using cv2.addWeighted
-            img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
-
-            # Adding a rectangle outline to the image
-            cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
-
-            # Adding the label to the image
-            if text_display and self.label is not None:
-                # Setting the font and the font scale
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 1.2
-                
-                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
-
-                # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
-                (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
-
-                # Ensuring that the label doesn't go out of bounds
-                if y1 - label_height - baseline < 0:
-                    y1 = label_height + baseline
-                if x1 + label_width > img.shape[1]:
-                    x1 = img.shape[1] - label_width
-                if y1 + label_height + baseline > img.shape[0]:
-                    y1 = img.shape[0] - label_height - baseline
-                if x1 < 0:
-                    x1 = 0
-
-                # Creating a filled rectangle for the label background
-                cv2.rectangle(img, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
-
-                # Adding the label text to the image
-                cv2.putText(img, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
-
-            image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
-
-            # Displaying Action on image surface at the top left corner
-            font = pygame.font.SysFont('Lato', 50)#, bold=True)
-
-            text = font.render('Action: ' + str(self.decode_render_action_1(self.current_action)), True, (255, 255, 255))
-            image_surface.blit(text, (0, 0))
-
-            if self.env_mode == 0:
-                # Add Step | Reward | IoU  on the image surface at the bottom left corner
-                font = pygame.font.SysFont('Lato', 20)#, bold=True)
-
-                text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)), True, (255, 255, 255))
-                image_surface.blit(text, (0, self.window_size[1] - 20))
-
-                # Create font with Lato, size 30
-                font = pygame.font.SysFont('Lato', 30)
-
-                # Adding bottom right legend for bounding box colors
-                # Marker for Ground Truth (using a rectangular marker)
-                target_marker_size = 20
-                pygame.draw.rect(image_surface, target_color, (self.window_size[0] - 180, self.window_size[1] - 20, target_marker_size, target_marker_size))
-                label_text = font.render('Ground Truth', True, target_color)
-                image_surface.blit(label_text, (self.window_size[0] - 150, self.window_size[1] - 20))
-
-                # Marker for Prediction (using a circular marker)
-                prediction_marker_size = 20
-                pygame.draw.circle(image_surface, self.color, (self.window_size[0] - 330 + prediction_marker_size//2, self.window_size[1] - 20 + prediction_marker_size//2), prediction_marker_size//2)
-                label_text = font.render('Prediction', True, self.color)
-                image_surface.blit(label_text, (self.window_size[0] - 300, self.window_size[1] - 20))
-
-            # Draw the original image on the canvas
-            canvas.blit(image_surface, (0, 0))
-
-            # Display the frame
-            self.window.blit(canvas, (0, 0))
-            pygame.display.flip()
-
-            # Process Pygame events
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.close()
-
-            self.clock.tick(10)  # Adjust the frame rate as needed
-
-            # Return the image surface as a NumPy array
-            return np.swapaxes(pygame.surfarray.array3d(image_surface), 0, 1)
         elif mode == 'rgb_array':
             # Create an RGB array for Gym rendering
             rgb_array = np.zeros((self.window_size[1], self.window_size[0], 3), dtype=np.uint8)
