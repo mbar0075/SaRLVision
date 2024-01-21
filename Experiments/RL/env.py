@@ -1207,6 +1207,10 @@ class DetectionEnv(Env):
         # Retrieving bounding box coordinates.
         x1, y1, x2, y2 = self.bbox
 
+        offset = 10
+        # Going a bit outside the bounding box
+        x1, y1, x2, y2 = x1 - offset, y1 - offset, x2 + offset, y2 + offset
+
         # Creating a black 3-channel mask image.
         mask = np.zeros_like(self.original_image)
 
@@ -1217,29 +1221,31 @@ class DetectionEnv(Env):
         bbox_object = self.original_image[y1:y2, x1:x2]
         
         # From the bbox_object, we extract the mask via Canny Edge Detection.
-        edges = cv2.Canny(bbox_object, 0, 100)
-
+        edges = cv2.Canny(bbox_object, 100, 200)
+        self.plot_img(edges, title='Canny Edge Detection')
         # Creating a copy of the mask.
         mask_copy = mask.copy()
 
         # Mapping the edges to the mask.
         mask_copy[y1:y2, x1:x2] = edges
-        
+
         # Retrieving the contours of the mask.
         contours = ah.single_object_polygon_approximation(mask_copy, epsilon=0.005, do_cvt=False)
 
-        # Draw the contours onto the mask and fill them
+        # Draw the single polygon onto the mask and fill it
         cv2.fillPoly(mask, pts=contours, color=(255, 255, 255))
-        
+ 
         # Define a larger structuring element
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
 
         # Apply the closing operation multiple times
-        for _ in range(10):  # Change this number to apply the operation more or less times
+        for _ in range(100):  # Change this number to apply the operation more or less times
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-        # Apply Gaussian blur to smooth the mask
-        mask = cv2.GaussianBlur(mask, (3, 3), 0)
+        
+        # Filling the remaining holes in the mask with the closing operation but different kernel
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))
+        for _ in range(4):
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
         # Creating a filled polygon annotation for the object mask on a copy of the original image.
         image_copy = self.original_image.copy()       
@@ -1258,6 +1264,12 @@ class DetectionEnv(Env):
         kernel = np.ones((5,5), np.uint8)
         dilated = cv2.dilate(thresh_itti, kernel, iterations=2)
         erosion = cv2.erode(dilated, kernel, iterations=2)
+
+        # Applying the saliency map to the mask, to remove holes in the mask
+        mask = cv2.bitwise_and(erosion, mask)#, mask=erosion)
+
+        # Apply Gaussian blur to smooth the mask
+        mask = cv2.GaussianBlur(mask, (3, 3), 0)
 
         # Plotting the image.
         if do_display:
