@@ -1,5 +1,8 @@
+import math
 import torch
 import torch.nn as nn
+from torch.nn.init import  uniform_
+import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
 from torchvision.models import vgg16, VGG16_Weights, resnet50, ResNet50_Weights, mobilenet_v2
@@ -17,9 +20,11 @@ VGG16_TARGET_SIZE = (224, 224)
 RESNET50_TARGET_SIZE = (224, 224)
 MOBILENETV2_TARGET_SIZE = (224, 224)
 EFFICIENTNETV2_TARGET_SIZE = (224, 224)
+XCEPTION_TARGET_SIZE = (299, 299)
+INCEPTIONV3_TARGET_SIZE = (299, 299)
 
 """
-This file was inspired from the Active Object Localization paper.
+This script was inspired from the Active Object Localization paper.
 """
 
 """
@@ -31,7 +36,7 @@ class VGG16FeatureExtractor(nn.Module):
         vgg16_model = vgg16(weights=VGG16_Weights.DEFAULT) # Loading the pretrained model
         vgg16_model.eval() # Setting the model in evaluation mode to not do dropout.
         self.features = list(vgg16_model.children())[0] # Retrieving the first child of the model, which is typically the feature extraciton part of the model
-        self.classifier = nn.Sequential(*list(vgg16_model.classifier.children())[:-2]) # Retrieving the classifier part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
+        self.classifier = nn.Sequential(*list(vgg16_model.classifier.children())[:-2]) # Retrieving the feature extraction part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
         self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
 
     def forward(self, x):# Forwarding the input through the model
@@ -51,7 +56,7 @@ class ResNet50FeatureExtractor(nn.Module):
         resnet50_model = resnet50(weights=ResNet50_Weights.DEFAULT) # Loading the pretrained model
         resnet50_model.eval() # Setting the model in evaluation mode to not do dropout.
         modules = list(resnet50_model.children())[:-2] # Retrieving the first child of the model, which is typically the feature extraciton part of the model
-        self.features = nn.Sequential(*modules) # Retrieving the classifier part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
+        self.features = nn.Sequential(*modules) # Retrieving the feature extraction part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
         self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
     
     def forward(self, x):# Forwarding the input through the model
@@ -206,6 +211,73 @@ class DuelingDQN(nn.Module):
         adv = self.advfunc(o)
         # Returning the value and advantage functions combined into the Q function (Q = V + A - mean(A))
         return value + adv - adv.mean(dim=-1, keepdim=True)
+
+    def __call__(self, X):
+        return self.forward(X)
+    
+class NoisyLinear(nn.Module):
+    """
+        The noisy linear layer that adds noise to the weights of the linear layer
+
+        Args:
+            in_size: The number of inputs
+            out_size: The number of outputs
+
+        Layers:
+            1. Linear layer with in_size inputs and out_size outputs
+            2. Linear layer with in_size inputs and out_size outputs
+            3. Linear layer with out_size outputs
+            4. Linear layer with out_size outputs
+    """
+    def __init__(self, in_size, out_size):
+        super(NoisyLinear, self).__init__()
+        # Defining the parameters of the layer as trainable parameters (weights and biases mu and sigma)
+        self.w_mu = nn.Parameter(torch.empty((out_size, in_size)))
+        self.w_sigma = nn.Parameter(torch.empty((out_size, in_size)))
+        self.b_mu = nn.Parameter(torch.empty((out_size)))
+        self.b_sigma = nn.Parameter(torch.empty((out_size)))
+
+        # Creating the noise tensors for the weights and biases of the layer (w_epsilon and b_epsilon)
+        uniform_(self.w_mu, -math.sqrt(3 / in_size), math.sqrt(3 / in_size))
+        uniform_(self.b_mu, -math.sqrt(3 / in_size), math.sqrt(3 / in_size))
+
+        # Initializing the noise tensors with the same shape as the weights and biases
+        nn.init.constant(self.w_sigma, 0.017)
+        nn.init.constant(self.b_sigma, 0.017)
+
+    def forward(self, x, sigma=0.1): # Sigma Controls the amount of noise was 1 before
+        # Forward pass through the layer
+        if self.training: # If the model is in training mode, add noise to the weights and biases
+            w_noise = torch.normal(0, sigma, size=self.w_mu.size())
+            b_noise = torch.normal(0, sigma, size=self.b_mu.size())
+            return F.linear(x, self.w_mu + self.w_sigma * w_noise, self.b_mu + self.b_sigma * b_noise)
+        else:# If the model is in evaluation mode, return the mean of the weights and biases
+            return F.linear(x, self.w_mu, self.b_mu)
+        
+class NoisyDQN(nn.Module):
+    """
+        The noisy DQN network that estimates the action-value function
+
+        Args:
+            ninputs: The number of inputs
+            noutputs: The number of outputs
+
+        Layers:
+            1. Noisy linear layer with 64 neurons
+            2. Tanh activation function
+            3. Noisy linear layer with noutputs neurons
+    """
+    def __init__(self, ninputs, noutputs):
+        super(NoisyDQN, self).__init__()
+        self.a1 = NoisyLinear(ninputs, 1024)
+        self.a2 = NoisyLinear(1024, noutputs)
+
+    def forward(self, X):
+        # Forward pass
+        o = self.a1(X)
+        o = torch.tanh(o)
+        o = self.a2(o)
+        return o
 
     def __call__(self, X):
         return self.forward(X)

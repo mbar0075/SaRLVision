@@ -14,10 +14,10 @@ import pygame
 import os
 import sys
 
-# Importing SaRa
+# Importing SaRa (For now only being used for segmentation, but still need to implement it in the initial bounding box prediction)
 import SaRa.saraRC1 as sara
-generator = 'itti'
-GRID_SIZE =  8
+generator = 'itti' 
+GRID_SIZE =  9
 
 # Importing Mask To Annotation
 import MaskToAnnotation.coco as coco
@@ -25,26 +25,32 @@ import MaskToAnnotation.yolo as yolo
 import MaskToAnnotation.vgg as vgg
 import MaskToAnnotation.annotation_helper as ah
 
+# Constants
 ACTION_HISTORY = [[100]*9]*20
-NU = 3.0
-THRESHOLD = 0.9#0.95
-MAX_THRESHOLD = 1.0
-GROWTH_RATE = 0.0009
-ALPHA = 0.1#0.1 #0.15
-MAX_STEPS = 50#100#200
+NU = 3.0 # Reward of Trigger
+THRESHOLD = 0.9#0.95 # Stopping criterion for the trigger
+ALPHA = 0.1#0.1 #0.15 # Scaling factor for bounding box movements
+MAX_STEPS = 50#100#200 # Maximum number of steps
 RENDER_MODE = 'human'# None, 'rgb_array', 'bbox', 'sara'
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
 CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
-WINDOW_SIZE = (800, 600)
-SIZE = (80, 60)
 REWARD_FUNC = iou
-ACTION_MODE =1 #0  
 ENV_MODE = 0 # 0 for training, 1 for testing
 
+# Not used
+MAX_THRESHOLD = 1.0 # For threshold growth
+GROWTH_RATE = 0.0009
+WINDOW_SIZE = (800, 600) # For rendering
+SIZE = (80, 60)
+ACTION_MODE =1 #0 For different actions, 1 for the original actions
+
 class DetectionEnv(Env):
+    # Metadata for the environment
     metadata = {"render_modes": ["human", "rgb_array", "bbox", "sara"], "render_fps": 3}
+
+    # Reward penalty dictionary - Not used
     reward_penalty_dict = {
         0: 1,
         1: 0,
@@ -96,7 +102,9 @@ class DetectionEnv(Env):
         # Initializing the action space and the observation space.
         # Action space is 9 because we have 8 actions + 1 trigger action (move right, move left, move up, move down, make bigger, make smaller, make fatter, make taller, trigger).
         self.action_space = gym.spaces.Discrete(9)
-        self.action_mode = mode
+
+        # Not used
+        # self.action_mode = mode
 
         # Initializing the observation space.
         # Calculating the size of the state vector.
@@ -121,8 +129,10 @@ class DetectionEnv(Env):
         self.cumulative_reward = 0
         self.truncated = False
         self.threshold = threshold
-        self.max_threshold = MAX_THRESHOLD
-        self.growth_rate = GROWTH_RATE
+
+        # Not used for threshold growth
+        # self.max_threshold = MAX_THRESHOLD
+        # self.growth_rate = GROWTH_RATE
 
         # Classification part
         self.label = None
@@ -137,8 +147,8 @@ class DetectionEnv(Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
-        self.window_size = (self.width, self.height) #WINDOW_SIZE
-        self.size = SIZE  # Set size to one-tenth of the image dimensions
+        # Initializing the window size, the window and the clock for rendering.
+        self.window_size = (self.width, self.height)
         self.window = None
         self.clock = None
         self.is_render = False
@@ -150,7 +160,8 @@ class DetectionEnv(Env):
             self.window = pygame.display.set_mode(self.window_size)
             pygame.display.set_caption("Detection Environment")
             self.clock = pygame.time.Clock()
-        # For opposite actions
+
+        # For recording the current action
         self.current_action = None
 
         # For environment mode
@@ -190,6 +201,7 @@ class DetectionEnv(Env):
         # Calculating the reward.
         reward = iou_current - iou_previous
 
+        # For normalisation via step count and reward penalty (not used)
         # scaling_factor = 0.01
         # normalized_value = -(self.step_count / self.max_steps) * scaling_factor
         # reward += normalized_value
@@ -199,39 +211,13 @@ class DetectionEnv(Env):
         # reward += normalized_value
 
         return reward 
+        # Old reward such as in Active Object Localization
         # If the reward is smaller than 0, we return -1 else we return 1.
         if reward <= 0:
             return -1
         
         # Returning 1.
         return 1
-    
-    def reward_penalty(self):
-        """
-            Calculating the reward penalty for those actions which do the opposite of the previous action.
-
-            Output:
-                - Reward penalty
-
-        """
-        penalty = 0
-        # Creating the action vector.
-        action_vector = [0] * 9
-        # Setting the current action to 1, based on the reward penalty dictionary which maps the action to the opposite action.
-        if self.current_action in self.reward_penalty_dict.keys():
-            action_vector[self.reward_penalty_dict[self.current_action]] = 1
-
-        # print("Action vector: ", action_vector, "Actions history: ", self.actions_history)
-        
-        # Iterating over the history of the actions backwards.
-        for i in range(len(self.actions_history)-1, -1, -1):
-            
-            # Checking if the action vector is equal to the action vector in the history of the actions, if yes we add the index to the penalty.
-            if  action_vector == self.actions_history[i]:
-                penalty += i
-
-        # Returning the reward penalty.
-        return penalty
     
     def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
         """
@@ -261,19 +247,6 @@ class DetectionEnv(Env):
         # Returning -1*trigger reward.
         return -1*self.nu#/abs(reward)
     
-    def update_threshold(self):
-        """
-            Updating the threshold.
-        
-            Formula:
-                threshold = max_threshold - (max_threshold / (1.0 + exp(growth_rate * num_episodes)))
-        """
-        # Calculating the new threshold, by growing the threshold.
-        self.threshold = self.max_threshold - (self.max_threshold / (1.0 + math.exp(self.growth_rate * self.num_episodes)))
-
-        # Clipping the threshold.
-        self.threshold = min(self.threshold, self.max_threshold)
-    
     def get_features(self, image, dtype=FloatTensor):
         """
             Getting the features of the image.
@@ -300,15 +273,6 @@ class DetectionEnv(Env):
             Output:
                 - State of the environment
         """
-        #----------------------------------------------
-        # Drawing the bounding box on the image.
-        # xmin, ymin, xmax, ymax = self.bbox
-        # image = self.original_image.copy()
-
-        # cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)
-
-        # image = transform_input(image, target_size=self.target_size)
-        #----------------------------------------------
         # Transforming the image.
         image = transform_input(self.image, target_size=self.target_size)
 
@@ -361,133 +325,94 @@ class DetectionEnv(Env):
 
         # Returning the history of the actions.
         return self.actions_history
-    
-    def transform_action(self, action):
-        """
-            Function that applies the action to the image.
-        
-            Input:
-                - Action to apply
+       
+    # def transform_action_0(self, action):
+    #     """
+    #     Function that applies the action to the image.
 
-            Output:
-                - Bounding box of the image depending on the action mode
-        """
-        if self.action_mode == 0:
-            return self.transform_action_0(action)
-        elif self.action_mode == 1:
-            return self.transform_action_1(action)
+    #     Actions:
+    #         - 0: X1 Left
+    #         - 1: X1 Right
+    #         - 2: X2 Left
+    #         - 3: X2 Right
+    #         - 4: Y1 Up
+    #         - 5: Y1 Down
+    #         - 6: Y2 Up
+    #         - 7: Y2 Down
 
-    def get_actions(self):
-        """
-            Function that prints the name of the actions depending on the action mode.
-        """
-        if self.action_mode == 0:
-            self.get_actions_0()
-        elif self.action_mode == 1:
-            self.get_actions_1()
+    #     Input:
+    #         - Action to apply
 
-    def decode_action(self, action):
-        """
-            Function that decodes the action depending on the action mode.
+    #     Output:
+    #         - Bounding box of the image
+    #     """
+    #     # Retrieving the bounding box of the image.
+    #     bbox = self.bbox
 
-            Input:
-                - Action to decode
+    #     # Retrieving the coordinates of the bounding box.
+    #     xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
 
-            Output:
-                - Decoded action
-        """
-        if self.action_mode == 0:
-            self.decode_action_0(action)
-        elif self.action_mode == 1:
-            self.decode_action_1(action)
-        
-    def transform_action_0(self, action):
-        """
-        Function that applies the action to the image.
+    #     # Calculating the alpha_h and alpha_w mentioned in the paper, and adding to it a decreasing factor depending on the step count.
+    #     # alpha_h = int(self.alpha * (ymax - ymin)) + int(self.step_count * self.alpha * (ymax - ymin) / self.max_steps)
+    #     # alpha_w = int(self.alpha * (xmax - xmin)) + int(self.step_count * self.alpha * (xmax - xmin) / self.max_steps)
 
-        Actions:
-            - 0: X1 Left
-            - 1: X1 Right
-            - 2: X2 Left
-            - 3: X2 Right
-            - 4: Y1 Up
-            - 5: Y1 Down
-            - 6: Y2 Up
-            - 7: Y2 Down
+    #     # alpha_h = int(self.alpha * (ymax - ymin))
+    #     # alpha_w = int(self.alpha * (xmax - xmin))
+    #     alpha_h = int(1/self.step_count * (ymax - ymin))
+    #     alpha_w = int(1/self.step_count * (xmax - xmin))
+    #     # If the action is 0, move X1 to the left.
+    #     if action == 0:
+    #         xmin -= alpha_w
+    #         xmax -= alpha_w
+    #     # If the action is 1, move X1 to the right.
+    #     elif action == 1:
+    #         xmin += alpha_w
+    #         xmax += alpha_w
+    #     # If the action is 2, move X2 to the left.
+    #     elif action == 2:
+    #         xmin -= alpha_w
+    #         xmax -= alpha_w
+    #     # If the action is 3, move X2 to the right.
+    #     elif action == 3:
+    #         xmin += alpha_w
+    #         xmax += alpha_w
+    #     # If the action is 4, move Y1 up.
+    #     elif action == 4:
+    #         ymin -= alpha_h
+    #         ymax -= alpha_h
+    #     # If the action is 5, move Y1 down.
+    #     elif action == 5:
+    #         ymin += alpha_h
+    #         ymax += alpha_h
+    #     # If the action is 6, move Y2 up.
+    #     elif action == 6:
+    #         ymin -= alpha_h
+    #         ymax -= alpha_h
+    #     # If the action is 7, move Y2 down.
+    #     elif action == 7:
+    #         ymin += alpha_h
+    #         ymax += alpha_h
 
-        Input:
-            - Action to apply
+    #     # Returning the bounding box, ensuring it remains within the image bounds.
+    #     return [self.rewrap(xmin, self.width), self.rewrap(ymin, self.height), self.rewrap(xmax, self.width), self.rewrap(ymax, self.height)]
 
-        Output:
-            - Bounding box of the image
-        """
-        # Retrieving the bounding box of the image.
-        bbox = self.bbox
+    # def get_actions_0(self):
+    #     """
+    #     Function that prints the name of the actions.
+    #     """
+    #     print('\033[1m' + "Actions:" + '\033[0m')
+    #     print('\033[31m' + "0: X1 Right → " + '\033[0m')
+    #     print('\033[32m' + "1: X1 Left ←" + '\033[0m')
+    #     print('\033[33m' + "2: X2 Right →" + '\033[0m')
+    #     print('\033[34m' + "3: X2 Left ←" + '\033[0m')
+    #     print('\033[35m' + "4: Y1 Up ↑" + '\033[0m')
+    #     print('\033[36m' + "5: Y1 Down ↓" + '\033[0m')
+    #     print('\033[37m' + "6: Y2 Up ↑" + '\033[0m')
+    #     print('\033[38m' + "7: Y2 Down ↓" + '\033[0m')
+    #     print('\033[1m' + "8: Trigger T" + '\033[0m')
+    #     pass
 
-        # Retrieving the coordinates of the bounding box.
-        xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
-
-        # Calculating the alpha_h and alpha_w mentioned in the paper, and adding to it a decreasing factor depending on the step count.
-        # alpha_h = int(self.alpha * (ymax - ymin)) + int(self.step_count * self.alpha * (ymax - ymin) / self.max_steps)
-        # alpha_w = int(self.alpha * (xmax - xmin)) + int(self.step_count * self.alpha * (xmax - xmin) / self.max_steps)
-
-        # alpha_h = int(self.alpha * (ymax - ymin))
-        # alpha_w = int(self.alpha * (xmax - xmin))
-        alpha_h = int(1/self.step_count * (ymax - ymin))
-        alpha_w = int(1/self.step_count * (xmax - xmin))
-        # If the action is 0, move X1 to the left.
-        if action == 0:
-            xmin -= alpha_w
-            xmax -= alpha_w
-        # If the action is 1, move X1 to the right.
-        elif action == 1:
-            xmin += alpha_w
-            xmax += alpha_w
-        # If the action is 2, move X2 to the left.
-        elif action == 2:
-            xmin -= alpha_w
-            xmax -= alpha_w
-        # If the action is 3, move X2 to the right.
-        elif action == 3:
-            xmin += alpha_w
-            xmax += alpha_w
-        # If the action is 4, move Y1 up.
-        elif action == 4:
-            ymin -= alpha_h
-            ymax -= alpha_h
-        # If the action is 5, move Y1 down.
-        elif action == 5:
-            ymin += alpha_h
-            ymax += alpha_h
-        # If the action is 6, move Y2 up.
-        elif action == 6:
-            ymin -= alpha_h
-            ymax -= alpha_h
-        # If the action is 7, move Y2 down.
-        elif action == 7:
-            ymin += alpha_h
-            ymax += alpha_h
-
-        # Returning the bounding box, ensuring it remains within the image bounds.
-        return [self.rewrap(xmin, self.width), self.rewrap(ymin, self.height), self.rewrap(xmax, self.width), self.rewrap(ymax, self.height)]
-
-    def get_actions_0(self):
-        """
-        Function that prints the name of the actions.
-        """
-        print('\033[1m' + "Actions:" + '\033[0m')
-        print('\033[31m' + "0: X1 Right → " + '\033[0m')
-        print('\033[32m' + "1: X1 Left ←" + '\033[0m')
-        print('\033[33m' + "2: X2 Right →" + '\033[0m')
-        print('\033[34m' + "3: X2 Left ←" + '\033[0m')
-        print('\033[35m' + "4: Y1 Up ↑" + '\033[0m')
-        print('\033[36m' + "5: Y1 Down ↓" + '\033[0m')
-        print('\033[37m' + "6: Y2 Up ↑" + '\033[0m')
-        print('\033[38m' + "7: Y2 Down ↓" + '\033[0m')
-        print('\033[1m' + "8: Trigger T" + '\033[0m')
-        pass
-
-    def decode_action_0(self, action):
+    # def decode_action_0(self, action):
         """
         Function that decodes the action.
 
@@ -527,7 +452,7 @@ class DetectionEnv(Env):
         pass
 
 
-    def transform_action_1(self, action):
+    def transform_action(self, action):
         """
             Function that applies the action to the image.
 
@@ -598,7 +523,7 @@ class DetectionEnv(Env):
         # Returning the bounding box, whilst ensuring that the bounding box is within the image.
         return [self.rewrap(xmin, self.width), self.rewrap(ymin, self.height), self.rewrap(xmax, self.width), self.rewrap(ymax, self.height)]
     
-    def get_actions_1(self):
+    def get_actions(self):
         """
             Function that prints the name of the actions.
         """
@@ -614,7 +539,7 @@ class DetectionEnv(Env):
         print('\033[1m' + "8: Trigger T" + '\033[0m')
         pass
 
-    def decode_action_1(self, action):
+    def decode_action(self, action):
         """
             Function that decodes the action.
 
@@ -907,7 +832,7 @@ class DetectionEnv(Env):
         # Returning the state of the environment, the reward, whether the episode is finished or not, whether the episode is truncated or not and the information of the environment.
         return self.get_state(), reward, self.terminated, self.truncated, self.get_info()
     
-    def decode_render_action_1(self, action):
+    def decode_render_action(self, action):
         """
         Function that decodes the action.
 
@@ -946,8 +871,8 @@ class DetectionEnv(Env):
             return "Trigger"
         else:
             return "N/A"
+        pass
 
-    
     def _render_frame(self, mode='human', close=False, alpha=0.3, text_display=True):
         # Retrieving bounding box coordinates.
         x1, y1, x2, y2 = self.bbox  # Make sure self.bbox is defined in your environment
@@ -1029,7 +954,7 @@ class DetectionEnv(Env):
             # Displaying Action on image surface at the top left corner
             font = pygame.font.SysFont('Lato', 50)#, bold=True)
 
-            text = font.render('Action: ' + str(self.decode_render_action_1(self.current_action)), True, (255, 255, 255))
+            text = font.render('Action: ' + str(self.decode_render_action(self.current_action)), True, (255, 255, 255))
             image_surface.blit(text, (0, 0))
 
             if self.env_mode == 0:
@@ -1081,7 +1006,7 @@ class DetectionEnv(Env):
 
             # Adding Action on the RGB array at the top left corner
             font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(rgb_array, 'Action: ' + str(self.decode_render_action_1(self.current_action)),
+            cv2.putText(rgb_array, 'Action: ' + str(self.decode_render_action(self.current_action)),
                         (10, 40), font, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
 
             # Adding Step | Reward | IoU on the RGB array at the bottom left corner
@@ -1338,7 +1263,7 @@ class DetectionEnv(Env):
         elif annotation_format == "yolo":
             yolo.annotate((id, title, image, project_name, category, save_dir), do_display=do_display, do_save=do_save, do_print=do_print, annotation_color=annotation_color, object_configuration=object_configuration, do_cvt=do_cvt)
         else:
-            raise Exception("Unknown annotation format.")
+            raise Exception("Unknown Annotation Format.")
         
     def plot_img(self, image, title=None):
         """
@@ -1365,3 +1290,91 @@ class DetectionEnv(Env):
 
         Env.close(self)
         pass
+    
+    def generate_initial_bbox(self, threshold):
+        """
+            Function that generates an initial bounding box prediction based on Saliency Ranking.
+
+        """
+        pass
+    # ---------------------------------------------- Not used ----------------------------------------------
+
+    # def reward_penalty(self):
+    #     """
+    #         Calculating the reward penalty for those actions which do the opposite of the previous action.
+
+    #         Output:
+    #             - Reward penalty
+
+    #     """
+    #     penalty = 0
+    #     # Creating the action vector.
+    #     action_vector = [0] * 9
+    #     # Setting the current action to 1, based on the reward penalty dictionary which maps the action to the opposite action.
+    #     if self.current_action in self.reward_penalty_dict.keys():
+    #         action_vector[self.reward_penalty_dict[self.current_action]] = 1
+
+    #     # print("Action vector: ", action_vector, "Actions history: ", self.actions_history)
+        
+    #     # Iterating over the history of the actions backwards.
+    #     for i in range(len(self.actions_history)-1, -1, -1):
+            
+    #         # Checking if the action vector is equal to the action vector in the history of the actions, if yes we add the index to the penalty.
+    #         if  action_vector == self.actions_history[i]:
+    #             penalty += i
+
+    #     # Returning the reward penalty.
+    #     return penalty
+
+
+    # def update_threshold(self):
+    #     """
+    #         Updating the threshold.
+        
+    #         Formula:
+    #             threshold = max_threshold - (max_threshold / (1.0 + exp(growth_rate * num_episodes)))
+    #     """
+    #     # Calculating the new threshold, by growing the threshold.
+    #     self.threshold = self.max_threshold - (self.max_threshold / (1.0 + math.exp(self.growth_rate * self.num_episodes)))
+
+    #     # Clipping the threshold.
+    #     self.threshold = min(self.threshold, self.max_threshold)
+
+    # def transform_action(self, action):
+    #     """
+    #         Function that applies the action to the image.
+        
+    #         Input:
+    #             - Action to apply
+
+    #         Output:
+    #             - Bounding box of the image depending on the action mode
+    #     """
+    #     if self.action_mode == 0:
+    #         return self.transform_action_0(action)
+    #     elif self.action_mode == 1:
+    #         return self.transform_action_1(action)
+
+    # def get_actions(self):
+    #     """
+    #         Function that prints the name of the actions depending on the action mode.
+    #     """
+    #     if self.action_mode == 0:
+    #         self.get_actions_0()
+    #     elif self.action_mode == 1:
+    #         self.get_actions_1()
+
+    # def decode_action(self, action):
+    #     """
+    #         Function that decodes the action depending on the action mode.
+
+    #         Input:
+    #             - Action to decode
+
+    #         Output:
+    #             - Decoded action
+    #     """
+    #     if self.action_mode == 0:
+    #         self.decode_action_0(action)
+    #     elif self.action_mode == 1:
+    #         self.decode_action_1(action)

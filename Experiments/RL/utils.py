@@ -200,6 +200,10 @@ def recall(bbox, target_bbox):
     # Multiplying the width by the height gives us the area
     box2_area = w_gt * h_gt
 
+    # Handling the case where there box2_area is 0
+    if box2_area == 0:
+        return 0.0
+    
     # Calculating the recall
     recall = inter_area / box2_area
 
