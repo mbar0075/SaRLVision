@@ -157,6 +157,8 @@ COTSDataset/
 
 # COCO DATASET https://cocodataset.org/#download
 COCODataset/
+PascalVOC2012Dataset/
+PascalVOC2007Dataset/
 *.avi
 # *.mp4
 output_video.mp4
