@@ -28,11 +28,13 @@ import MaskToAnnotation.vgg as vgg
 import MaskToAnnotation.annotation_helper as ah
 
 # Constants
-ACTION_HISTORY = [[100]*9]*20
+NUMBER_OF_ACTIONS = 8
+ACTION_HISTORY_SIZE = 20
+ACTION_HISTORY = [[0]*NUMBER_OF_ACTIONS]*ACTION_HISTORY_SIZE
 NU = 3.0 # Reward of Trigger
 THRESHOLD = 0.9#0.95 # Stopping criterion for the trigger
 ALPHA = 0.1#0.1 #0.15 # Scaling factor for bounding box movements
-MAX_STEPS = 50#100#200 # Maximum number of steps
+MAX_STEPS = 100#200#50 # Maximum number of steps
 RENDER_MODE = 'human'# None, 'rgb_array', 'bbox', 'sara'
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
@@ -130,7 +132,7 @@ class DetectionEnv(Env):
 
         # Initializing the action space and the observation space.
         # Action space is 9 because we have 8 actions + 1 trigger action (move right, move left, move up, move down, make bigger, make smaller, make fatter, make taller, trigger).
-        self.action_space = gym.spaces.Discrete(9)
+        self.action_space = gym.spaces.Discrete(NUMBER_OF_ACTIONS)
 
         # Initializing the observation space.
         # Calculating the size of the state vector.
@@ -138,7 +140,7 @@ class DetectionEnv(Env):
         # The observation space will be the features of the image concatenated with the history of the actions (size of the feature vector + size of the history vector).
         self.observation_space = gym.spaces.Box(
             low=0.0,
-            high=100.0, # Since the values of the features are between 0 and 100.
+            high=10.0, # Since the values of the features are between 0 and 100.
             shape=(state.shape[1],),
             dtype=np.float32
         )
@@ -225,6 +227,11 @@ class DetectionEnv(Env):
         # For environment mode
         self.env_mode = ENV_MODE
 
+        # For model (bounding box) checkpoint
+        self.best_iou = 0
+        self.best_bbox = self.bbox
+        pass
+
     def train(self):
         """
             Function that sets the environment mode to training.
@@ -259,51 +266,8 @@ class DetectionEnv(Env):
         # Calculating the reward.
         reward = iou_current - iou_previous
 
-        # For normalisation via step count and reward penalty (not used)
-        # scaling_factor = 0.01
-        # normalized_value = -(self.step_count / self.max_steps) * scaling_factor
-        # reward += normalized_value
-
-        # scaling_factor = 0.01
-        # normalized_value = -(self.reward_penalty()) * scaling_factor
-        # reward += normalized_value
-
+        # Returning the reward.
         return reward 
-        # Old reward such as in Active Object Localization
-        # If the reward is smaller than 0, we return -1 else we return 1.
-        if reward <= 0:
-            return -1
-        
-        # Returning 1.
-        return 1
-    
-    def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
-        """
-            Calculating the reward.
-
-            Input:
-                - Current state
-                - Target bounding box
-                - Reward function
-
-            Output:
-                - Reward
-        """
-        # Calculating the IoU between the current state and the target bounding box.
-        iou_current = reward_function(current_state, target_bbox)
-
-        # Calculating the reward.
-        reward = iou_current
-
-        # Updating the threshold.
-        # self.update_threshold()
-
-        # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
-        if reward >= self.threshold:
-            return self.nu*abs(reward)
-        
-        # Returning -1*trigger reward.
-        return -1*self.nu#/abs(reward)
     
     def get_features(self, image, dtype=FloatTensor):
         """
@@ -343,8 +307,11 @@ class DetectionEnv(Env):
         # Flattenning the action history.
         action_history = torch.tensor(self.actions_history, dtype=dtype).flatten().view(1, -1)
 
+        # Normalising bounding box coordinates so that they are between 0 and 1
+        normalised_bbox = [self.bbox[0] / self.width, self.bbox[1] / self.height, self.bbox[2] / self.width, self.bbox[3] / self.height]
+
         # Appending bounding box coordinates to the beginning of the action history.
-        action_history = torch.cat((torch.tensor(self.bbox, dtype=dtype).view(1, -1), action_history), 1)
+        action_history = torch.cat((torch.tensor(normalised_bbox, dtype=dtype).view(1, -1), action_history), 1)
         # action_history = torch.tensor(self.bbox, dtype=dtype).view(1, -1)
 
         # Concatenating the features and the action history.
@@ -356,7 +323,7 @@ class DetectionEnv(Env):
     def update_history(self, action):
         """
             Function that updates the history of the actions by adding the last one.
-            It is creating a history vector of size 9, where each element is 0 except the one corresponding to the action performed.
+            It is creating a history vector of size 8, where each element is 0 except the one corresponding to the action performed.
             It is then shifting the history vector by one and adding the new action vector to the history vector.
 
             Input:
@@ -366,18 +333,18 @@ class DetectionEnv(Env):
                 - History of the actions
         """
         # Creating the action vector.
-        action_vector = [0] * 9
+        action_vector = [0] * NUMBER_OF_ACTIONS
         action_vector[action] = 1
 
         # Retrieving the size of the history list.
         size_history_list = len(self.actions_history)
 
-        # If the size of the history list is smaller than 9, we add the action vector to the history vector.
-        if size_history_list < 9:
+        # If the size of the history list is smaller than 8, we add the action vector to the history vector.
+        if size_history_list < NUMBER_OF_ACTIONS:
             self.actions_history.append(action_vector)
         else:
             # Else we shift the history list by one and we add the action vector to the history vector.
-            for i in range(8,0,-1):
+            for i in range((NUMBER_OF_ACTIONS-1),0,-1):
                 self.actions_history[i] = self.actions_history[i-1].copy()
             self.actions_history[0] = action_vector
 
@@ -478,7 +445,6 @@ class DetectionEnv(Env):
         print('\033[36m' + "5: Make smaller -" + '\033[0m')
         print('\033[37m' + "6: Make fatter W" + '\033[0m')
         print('\033[38m' + "7: Make taller H" + '\033[0m')
-        print('\033[1m' + "8: Trigger T" + '\033[0m')
         pass
 
     def decode_action(self, action):
@@ -515,9 +481,6 @@ class DetectionEnv(Env):
         # If the action is 7, we print the name of the action.
         elif action == 7:
             print('\033[38m' + "Action: Make taller H" + '\033[0m')
-        # If the action is 8, we print the name of the action.
-        elif action == 8:
-            print('\033[1m' + "Action: Trigger T" + '\033[0m')
         pass
 
     def rewrap(self, coordinate, size):
@@ -722,6 +685,10 @@ class DetectionEnv(Env):
         # Displaying part (Retrieving a random color for the bounding box).
         self.color = self.generate_random_color()
 
+        # For model (bounding box) checkpoint
+        self.best_iou = 0
+        self.best_bbox = self.bbox
+
         # Returning the observation space.
         return self.get_state(), self.get_info()
     
@@ -773,6 +740,40 @@ class DetectionEnv(Env):
         # Returning the image.
         return image
     
+    def check_early_stopping(self):
+        """
+            Function that checks if the episode should be terminated or not, whilst also retrieving the best bounding box.
+        """
+        # Retrieving the current IoU.
+        current_iou = iou(self.bbox, self.target_bbox)
+
+        # If the current IoU is greater than the best IoU, we update the best IoU and the best bounding box.
+        if current_iou > self.best_iou and self.env_mode == 0:
+            self.best_iou = current_iou
+            self.best_bbox = self.bbox
+
+        # Retrieving the action history.
+        action_history = self.actions_history
+
+        # Adding the columns of the action history to form a vector of action frequencies for the action history matrix.
+        action_frequencies = np.sum(action_history, axis=0)
+
+        # print("Action Frequencies: ", action_frequencies)
+
+        # Calculate the total sum of the action frequencies
+        total_sum = np.sum(action_frequencies)
+
+        # Retrieving the number of actions whose frequency is not zero.
+        num_actions = np.count_nonzero(action_frequencies)
+
+        # If the number of actions whose frequency is not zero is less than 3, we terminate the episode, with the reasoning that the agent is stuck in a local minimum (repetitive actions).
+        if num_actions < 3 and total_sum == NUMBER_OF_ACTIONS:
+            # print("Episode is terminated due to repetitive actions.")
+            self.terminated = True
+        pass
+
+
+
     def step(self, action):
         """
             Function that performs an action on the environment.
@@ -796,42 +797,47 @@ class DetectionEnv(Env):
         self.current_action = action
         
         # Checking the action type and applying the action to the image (transform action).
-        if action < 8:
-            # Retrieving the previous state
-            previous_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
+        # if action < 8:
+        # Retrieving the previous state
+        previous_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
 
-            # Applying the action to the image.
-            self.bbox = self.transform_action(action)
+        # Applying the action to the image.
+        self.bbox = self.transform_action(action)
 
-            # Retrieving the current state.
-            current_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
+        # Retrieving the current state.
+        current_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
 
-            # Calculating the reward.
-            reward = self.calculate_reward(current_state, previous_state, self.target_bbox)
-        else:
-            # Retrieving the current state.
-            current_state = self.bbox
+        # Calculating the reward.
+        reward = self.calculate_reward(current_state, previous_state, self.target_bbox)
+        # else:
+        #     # Retrieving the current state.
+        #     current_state = self.bbox
 
-            # Calculating the reward.
-            reward = self.calculate_trigger_reward(current_state, self.target_bbox)
+        #     # Calculating the reward.
+        #     reward = self.calculate_trigger_reward(current_state, self.target_bbox)
 
-            # Setting the episode to be terminated.
-            self.terminated = True
+        #     # Setting the episode to be terminated.
+        #     self.terminated = True
 
         # Calculating the cumulative reward.
         self.cumulative_reward += reward
+
+        self.check_early_stopping()
 
         # Incrementing the step count.
         self.step_count += 1
 
         # Checking if the episode is finished and truncated.
         if self.step_count >= self.max_steps:
+            # print("Episode is truncated for exceeding the maximum number of steps.")
             self.terminated = True
             self.truncated = False
 
         # If the episode is finished, we increment the number of episodes.
         if self.terminated or self.truncated:
             self.num_episodes += 1
+            if self.env_mode == 0: # Training mode
+                self.bbox = self.best_bbox # Set the bounding box to the best bounding box (Model checkpoint)
 
         if self.is_render:
             self.render(self.render_mode)
@@ -873,9 +879,6 @@ class DetectionEnv(Env):
         # If the action is 7, return the name of the action.
         elif action == 7:
             return "Make taller"
-        # If the action is 8, return the name of the action.
-        elif action == 8:
-            return "Trigger"
         else:
             return "N/A"
         pass
@@ -970,7 +973,7 @@ class DetectionEnv(Env):
                 label_ratio_y = 0.05  # 5% from the bottom edge of the window
 
                 # Add Step | Reward | IoU  on the image surface at the bottom left corner
-                font_ratio = 0.03  # 5% of the image height
+                font_ratio = 0.04  # 5% of the image height
                 font_size = int(font_ratio * self.height)  # Calculate the font size
                 font = pygame.font.SysFont('Lato', font_size)#, bold=True) (font_size was 20 before)
 
@@ -988,10 +991,14 @@ class DetectionEnv(Env):
                 prediction_marker_size = target_marker_size  # Same size for prediction marker
 
                 # Calculate the positions of the markers and labels
-                target_marker_position = (int(window_width - label_ratio_x * window_width), int(window_height - label_ratio_y * window_height))
+                label_text = font.render('Ground Truth', True, target_color)
+                text_width, _ = label_text.get_size()
+                target_marker_position = (self.window_size[0] - text_width - target_marker_size, self.window_size[1] - target_marker_size)
                 target_label_position = (target_marker_position[0] + target_marker_size + 2, target_marker_position[1])
 
-                prediction_marker_position = (int(window_width - 2 * label_ratio_x * window_width), int(window_height - label_ratio_y * window_height))
+                label_text = font.render('Prediction', True, self.color)
+                text_width, _ = label_text.get_size()
+                prediction_marker_position = (self.window_size[0] - text_width - prediction_marker_size, self.window_size[1] - 2 * target_marker_size)
                 prediction_label_position = (prediction_marker_position[0] + prediction_marker_size + 2, prediction_marker_position[1])
 
                 # Draw the markers and labels
@@ -1448,3 +1455,31 @@ class DetectionEnv(Env):
 
         """
         pass
+
+    # def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
+    #     """
+    #         Calculating the reward.
+
+    #         Input:
+    #             - Current state
+    #             - Target bounding box
+    #             - Reward function
+
+    #         Output:
+    #             - Reward
+    #     """
+    #     # Calculating the IoU between the current state and the target bounding box.
+    #     iou_current = reward_function(current_state, target_bbox)
+
+    #     # Calculating the reward.
+    #     reward = iou_current
+
+    #     # Updating the threshold.
+    #     # self.update_threshold()
+
+    #     # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
+    #     if reward >= self.threshold:
+    #         return self.nu*abs(reward)
+        
+    #     # Returning -1*trigger reward.
+    #     return -1*self.nu#/abs(reward)
