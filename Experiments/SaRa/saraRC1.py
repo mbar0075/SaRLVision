@@ -524,7 +524,7 @@ def gen_blank_depth_weight(d_segments):
 
     
 #     return img, sara_list_out
-def generate_heatmap(img, sorted_seg_scores, segments_coords, mode=2) -> tuple:
+def generate_heatmap(img, sorted_seg_scores, segments_coords, mode=1) -> tuple:
     '''
     Generates a more vibrant heatmap overlay on the input image img based on the 
     provided sorted segment scores. It returns the image with the heatmap overlay 

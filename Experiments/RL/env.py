@@ -4,6 +4,8 @@ from gymnasium import Env, spaces
 import numpy as np
 import torch
 import torch.nn as nn
+import torchvision 
+from torchvision import datasets
 import matplotlib.pyplot as plt
 from utils import *
 from models import *
@@ -38,29 +40,14 @@ CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
 REWARD_FUNC = iou
 ENV_MODE = 0 # 0 for training, 1 for testing
+USE_DATASET = None # Whether to use the dataset or not, or to use the image directly
 
-# Not used
-MAX_THRESHOLD = 1.0 # For threshold growth
-GROWTH_RATE = 0.0009
-WINDOW_SIZE = (800, 600) # For rendering
-SIZE = (80, 60)
-ACTION_MODE =1 #0 For different actions, 1 for the original actions
 
 class DetectionEnv(Env):
     # Metadata for the environment
     metadata = {"render_modes": ["human", "rgb_array", "bbox", "sara"], "render_fps": 3}
-
-    # Reward penalty dictionary - Not used
-    reward_penalty_dict = {
-        0: 1,
-        1: 0,
-        2: 3,
-        3: 2,
-        4: 5,
-        5: 4,
-    }
     
-    def __init__(self, image, original_image, target_bbox, render_mode=RENDER_MODE, mode=ACTION_MODE, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=FEATURE_EXTRACTOR, target_size=TARGET_SIZE, classifier=CLASSIFIER, classifier_target_size=CLASSIFIER_TARGET_SIZE):
+    def __init__(self, env_config={}):
         """
             Constructor of the DetectionEnv class.
 
@@ -79,13 +66,50 @@ class DetectionEnv(Env):
                 - Environment
         """
         super(DetectionEnv, self).__init__()
-        # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
-        self.image = image
-        self.original_image = original_image
-        self.target_bbox = target_bbox
-        self.height = image.shape[0]
-        self.width = image.shape[1]
-        self.target_size = target_size
+
+        if 'dataset' in env_config:
+            self.use_dataset = env_config['dataset']
+            del env_config['dataset']
+        else:
+            self.use_dataset = USE_DATASET
+
+        # Variable to hold the number of epochs
+        self.epochs = 0
+        self.class_index = 0
+        self.classes = []
+        self.current_class = None
+        self.class_image_index = 0
+        self.total_images = 0
+
+        if self.use_dataset is not None:
+            self.dataset_image_index = 0
+            self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset)
+            self.extract()
+        else:
+            # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
+            if 'image' not in env_config:
+                raise ValueError('Image is required for Environment Creation')
+            self.image = env_config['image']
+            del env_config['image']
+
+            if 'original_image' not in env_config:
+                raise ValueError('Original image is required for Environment Creation')
+            self.original_image = env_config['original_image']
+            del env_config['original_image']
+
+            if 'target_bbox' not in env_config:
+                raise ValueError('Target bounding box is required for Environment Creation')
+            self.target_bbox = env_config['target_bbox']
+            del env_config['target_bbox']
+
+        self.height = self.image.shape[0]
+        self.width = self.image.shape[1]
+
+        if 'target_size' in env_config:
+            self.target_size = env_config['target_size']
+            del env_config['target_size']
+        else:
+            self.target_size = TARGET_SIZE
 
         # Initializing the actions history and the number of episodes.
         self.actions_history = []
@@ -96,15 +120,17 @@ class DetectionEnv(Env):
         self.bbox = [0, 0, self.width, self.height]
 
         # Initializing the feature extractor and the transform method.
-        self.feature_extractor = feature_extractor
-        self.transform = transform_input(self.image, target_size)
+        if 'feature_extractor' in env_config:
+            self.feature_extractor = env_config['feature_extractor']
+            del env_config['feature_extractor']
+        else:
+            self.feature_extractor = FEATURE_EXTRACTOR
+
+        self.transform = transform_input(self.image, self.target_size)
 
         # Initializing the action space and the observation space.
         # Action space is 9 because we have 8 actions + 1 trigger action (move right, move left, move up, move down, make bigger, make smaller, make fatter, make taller, trigger).
         self.action_space = gym.spaces.Discrete(9)
-
-        # Not used
-        # self.action_mode = mode
 
         # Initializing the observation space.
         # Calculating the size of the state vector.
@@ -122,30 +148,62 @@ class DetectionEnv(Env):
         self.truncated = False
         
         # Initializing the maximum number of steps, the current step, the scaling factor of the reward, the reward of the trigger, the cumulative reward, the threshold, the actions history and the number of episodes.
-        self.max_steps = max_steps
+        if 'max_steps' in env_config:
+            self.max_steps = env_config['max_steps']
+            del env_config['max_steps']
+        else:
+            self.max_steps = MAX_STEPS
+
+        if 'alpha' in env_config:
+            self.alpha = env_config['alpha']
+            del env_config['alpha']
+        else:
+            self.alpha = ALPHA
+
+        # Reward of Trigger
+        if 'nu' in env_config:
+            self.nu = env_config['nu']
+            del env_config['nu']
+        else:
+            self.nu = NU
+
         self.step_count = 0
-        self.alpha = alpha
-        self.nu = nu # Reward of Trigger
         self.cumulative_reward = 0
         self.truncated = False
-        self.threshold = threshold
 
-        # Not used for threshold growth
-        # self.max_threshold = MAX_THRESHOLD
-        # self.growth_rate = GROWTH_RATE
+        if 'threshold' in env_config:
+            self.threshold = env_config['threshold']
+            del env_config['threshold']
+        else:
+            self.threshold = THRESHOLD
 
         # Classification part
         self.label = None
         self.label_confidence = None
-        self.classifier = classifier
-        self.classifier_target_size = classifier_target_size
+
+        if 'classifier' in env_config:
+            self.classifier = env_config['classifier']
+            del env_config['classifier']
+        else:
+            self.classifier = CLASSIFIER
+        
+        if 'classifier_target_size' in env_config:
+            self.classifier_target_size = env_config['classifier_target_size']
+            del env_config['classifier_target_size']
+        else:
+            self.classifier_target_size = CLASSIFIER_TARGET_SIZE
 
         # Displaying part (Retrieving a random color for the bounding box).
         self.color = self.generate_random_color()
 
         # For rendering
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
-        self.render_mode = render_mode
+        if 'render_mode' in env_config:
+            self.render_mode = env_config['render_mode']
+            del env_config['render_mode']
+        else:
+            self.render_mode = RENDER_MODE
+
+        assert self.render_mode is None or self.render_mode in self.metadata["render_modes"]
 
         # Initializing the window size, the window and the clock for rendering.
         self.window_size = (self.width, self.height)
@@ -153,10 +211,10 @@ class DetectionEnv(Env):
         self.clock = None
         self.is_render = False
 
-        if render_mode is not None:
+        if self.render_mode is not None:
             self.is_render = True
             pygame.init()
-            self.render_mode = render_mode
+            self.render_mode = self.render_mode
             self.window = pygame.display.set_mode(self.window_size)
             pygame.display.set_caption("Detection Environment")
             self.clock = pygame.time.Clock()
@@ -325,132 +383,6 @@ class DetectionEnv(Env):
 
         # Returning the history of the actions.
         return self.actions_history
-       
-    # def transform_action_0(self, action):
-    #     """
-    #     Function that applies the action to the image.
-
-    #     Actions:
-    #         - 0: X1 Left
-    #         - 1: X1 Right
-    #         - 2: X2 Left
-    #         - 3: X2 Right
-    #         - 4: Y1 Up
-    #         - 5: Y1 Down
-    #         - 6: Y2 Up
-    #         - 7: Y2 Down
-
-    #     Input:
-    #         - Action to apply
-
-    #     Output:
-    #         - Bounding box of the image
-    #     """
-    #     # Retrieving the bounding box of the image.
-    #     bbox = self.bbox
-
-    #     # Retrieving the coordinates of the bounding box.
-    #     xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
-
-    #     # Calculating the alpha_h and alpha_w mentioned in the paper, and adding to it a decreasing factor depending on the step count.
-    #     # alpha_h = int(self.alpha * (ymax - ymin)) + int(self.step_count * self.alpha * (ymax - ymin) / self.max_steps)
-    #     # alpha_w = int(self.alpha * (xmax - xmin)) + int(self.step_count * self.alpha * (xmax - xmin) / self.max_steps)
-
-    #     # alpha_h = int(self.alpha * (ymax - ymin))
-    #     # alpha_w = int(self.alpha * (xmax - xmin))
-    #     alpha_h = int(1/self.step_count * (ymax - ymin))
-    #     alpha_w = int(1/self.step_count * (xmax - xmin))
-    #     # If the action is 0, move X1 to the left.
-    #     if action == 0:
-    #         xmin -= alpha_w
-    #         xmax -= alpha_w
-    #     # If the action is 1, move X1 to the right.
-    #     elif action == 1:
-    #         xmin += alpha_w
-    #         xmax += alpha_w
-    #     # If the action is 2, move X2 to the left.
-    #     elif action == 2:
-    #         xmin -= alpha_w
-    #         xmax -= alpha_w
-    #     # If the action is 3, move X2 to the right.
-    #     elif action == 3:
-    #         xmin += alpha_w
-    #         xmax += alpha_w
-    #     # If the action is 4, move Y1 up.
-    #     elif action == 4:
-    #         ymin -= alpha_h
-    #         ymax -= alpha_h
-    #     # If the action is 5, move Y1 down.
-    #     elif action == 5:
-    #         ymin += alpha_h
-    #         ymax += alpha_h
-    #     # If the action is 6, move Y2 up.
-    #     elif action == 6:
-    #         ymin -= alpha_h
-    #         ymax -= alpha_h
-    #     # If the action is 7, move Y2 down.
-    #     elif action == 7:
-    #         ymin += alpha_h
-    #         ymax += alpha_h
-
-    #     # Returning the bounding box, ensuring it remains within the image bounds.
-    #     return [self.rewrap(xmin, self.width), self.rewrap(ymin, self.height), self.rewrap(xmax, self.width), self.rewrap(ymax, self.height)]
-
-    # def get_actions_0(self):
-    #     """
-    #     Function that prints the name of the actions.
-    #     """
-    #     print('\033[1m' + "Actions:" + '\033[0m')
-    #     print('\033[31m' + "0: X1 Right → " + '\033[0m')
-    #     print('\033[32m' + "1: X1 Left ←" + '\033[0m')
-    #     print('\033[33m' + "2: X2 Right →" + '\033[0m')
-    #     print('\033[34m' + "3: X2 Left ←" + '\033[0m')
-    #     print('\033[35m' + "4: Y1 Up ↑" + '\033[0m')
-    #     print('\033[36m' + "5: Y1 Down ↓" + '\033[0m')
-    #     print('\033[37m' + "6: Y2 Up ↑" + '\033[0m')
-    #     print('\033[38m' + "7: Y2 Down ↓" + '\033[0m')
-    #     print('\033[1m' + "8: Trigger T" + '\033[0m')
-    #     pass
-
-    # def decode_action_0(self, action):
-        """
-        Function that decodes the action.
-
-        Input:
-            - Action to decode
-
-        Output:
-            - Decoded action
-        """
-        # If the action is 0, we print the name of the action.
-        if action == 0:
-            print('\033[31m' + "Action: X1 Right →" + '\033[0m')
-        # If the action is 1, we print the name of the action.
-        elif action == 1:
-            print('\033[32m' + "Action: X1 Left ←" + '\033[0m')
-        # If the action is 2, we print the name of the action.
-        elif action == 2:
-            print('\033[33m' + "Action: X2 Right →" + '\033[0m')
-        # If the action is 3, we print the name of the action.
-        elif action == 3:
-            print('\033[34m' + "Action: X2 Left ←" + '\033[0m')
-        # If the action is 4, we print the name of the action.
-        elif action == 4:
-            print('\033[35m' + "Action: Y1 Up ↑" + '\033[0m')
-        # If the action is 5, we print the name of the action.
-        elif action == 5:
-            print('\033[36m' + "Action: Y1 Down ↓" + '\033[0m')
-        # If the action is 6, we print the name of the action.
-        elif action == 6:
-            print('\033[37m' + "Action: Y2 Up ↑" + '\033[0m')
-        # If the action is 7, we print the name of the action.
-        elif action == 7:
-            print('\033[38m' + "Action: Y2 Down ↓" + '\033[0m')
-        # If the action is 8, we print the name of the action.
-        elif action == 8:
-            print('\033[1m' + "Action: Trigger T" + '\033[0m')
-        pass
-
 
     def transform_action(self, action):
         """
@@ -480,8 +412,18 @@ class DetectionEnv(Env):
         xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
 
         # Calculating the alpha_h and alpha_w mentioned in the paper.
-        alpha_h = int(self.alpha * (  ymax - ymin ))
-        alpha_w = int(self.alpha * (  xmax - xmin ))
+        # alpha_h = int(self.alpha * (  ymax - ymin ))
+        # alpha_w = int(self.alpha * (  xmax - xmin ))
+
+        reduction_factor = 0.01  # Reduction factor
+        max_reduction = 0.01  # Maximum reduction to prevent convergence to zero
+
+        # Calculate the reduction factor based on the step count
+        normalized_reduction_factor = max_reduction + (1 - max_reduction) * math.exp(-reduction_factor * self.step_count)
+
+        # Calculate alpha_h and alpha_w with the adjusted reduction factor
+        alpha_h = int(self.alpha * (ymax - ymin) * normalized_reduction_factor)
+        alpha_w = int(self.alpha * (xmax - xmin) * normalized_reduction_factor)
 
         # If the action is 0, we move the bounding box to the right.
         if action == 0:
@@ -647,7 +589,7 @@ class DetectionEnv(Env):
         # Returning the new color
         return random_rgb
     
-    def reset(self, seed=None, options=None, image=None, original_image=None, target_bbox=None, max_steps=MAX_STEPS, alpha=ALPHA, nu=NU, threshold=THRESHOLD, feature_extractor=FEATURE_EXTRACTOR, target_size=TARGET_SIZE, classifier=CLASSIFIER, classifier_target_size=CLASSIFIER_TARGET_SIZE):
+    def reset(self, env_config={}, seed=None, options=None):
         """
             Function that resets the environment.
 
@@ -667,26 +609,61 @@ class DetectionEnv(Env):
                 - State of the environment
         """
         super().reset(seed=seed)
-        # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
-        if image is not None:
-            self.image = image
-            self.height = image.shape[0]
-            self.width = image.shape[1]
-        if original_image is not None:
-            self.original_image = original_image
-        if target_bbox is not None:
-            self.target_bbox = target_bbox
-        self.target_size = target_size
+
+        if self.use_dataset is not None:
+            self.extract()
+        else:
+            # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
+            if 'image' in env_config:
+                self.image = env_config['image']
+                self.height = self.image.shape[0]
+                self.width = self.image.shape[1]
+                del env_config['image']
+
+            if 'original_image' in env_config:
+                self.original_image = env_config['original_image']
+                del env_config['original_image']
+
+            if 'target_bbox' in env_config:
+                self.target_bbox = env_config['target_bbox']
+                del env_config['target_bbox']
+
+        if 'target_size' in env_config:
+            self.target_size = env_config['target_size']
+            del env_config['target_size']
+        else:
+            self.target_size = TARGET_SIZE
         
         # Initializing the maximum number of steps, the current step, the scaling factor of the reward, the reward of the trigger, the cumulative reward, the threshold, the actions history and the number of episodes.
-        self.max_steps = max_steps
+        if 'max_steps' in env_config:
+            self.max_steps = env_config['max_steps']
+            del env_config['max_steps']
+        else:
+            self.max_steps = MAX_STEPS
+
+        if 'alpha' in env_config:
+            self.alpha = env_config['alpha']
+            del env_config['alpha']
+        else:
+            self.alpha = ALPHA
+
+        # Reward of Trigger
+        if 'nu' in env_config:
+            self.nu = env_config['nu']
+            del env_config['nu']
+        else:
+            self.nu = NU
+
         self.step_count = 0
-        self.alpha = alpha
-        self.nu = nu # Reward of Trigger
         self.cumulative_reward = 0
         self.truncated = False
         self.terminated = False
-        self.threshold = threshold
+
+        if 'threshold' in env_config:
+            self.threshold = env_config['threshold']
+            del env_config['threshold']
+        else:
+            self.threshold = THRESHOLD
 
         # Initializing the actions history and the number of episodes.
         self.actions_history = []
@@ -696,20 +673,50 @@ class DetectionEnv(Env):
         self.bbox = [0, 0, self.width, self.height]
 
         # Initializing the feature extractor and the transform method.
-        self.feature_extractor = feature_extractor
-        self.transform = transform_input(self.image, target_size)
+        if 'feature_extractor' in env_config:
+            self.feature_extractor = env_config['feature_extractor']
+            del env_config['feature_extractor']
+        else:
+            self.feature_extractor = FEATURE_EXTRACTOR
+        self.transform = transform_input(self.image, self.target_size)
 
         # Classification part
         self.label = None
         self.label_confidence = None
-        self.classifier = classifier
-        self.classifier_target_size = classifier_target_size
+        
+        if 'classifier' in env_config:
+            self.classifier = env_config['classifier']
+            del env_config['classifier']
+        else:
+            self.classifier = CLASSIFIER
+
+        if 'classifier_target_size' in env_config:
+            self.classifier_target_size = env_config['classifier_target_size']
+            del env_config['classifier_target_size']
+        else:
+            self.classifier_target_size = CLASSIFIER_TARGET_SIZE
 
         if self.is_render:
             self.window_size = (self.width, self.height) #WINDOW_SIZE
             self.window = pygame.display.set_mode(self.window_size)
             self.clock = pygame.time.Clock()
 
+        # Initializing the window size, the window and the clock for rendering.
+        # self.window_size = (self.width, self.height)
+        # self.window = None
+        # self.clock = None
+        # self.is_render = False
+
+        # if self.render_mode is not None:
+        #     pygame.quit()
+        #     self.is_render = True
+        #     pygame.init()
+        #     self.render_mode = self.render_mode
+        #     self.window = pygame.display.set_mode(self.window_size)
+        #     pygame.display.set_caption("Detection Environment")
+        #     self.clock = pygame.time.Clock()
+
+        # For recording the current action
         self.current_action = None
 
         # Displaying part (Retrieving a random color for the bounding box).
@@ -958,27 +965,45 @@ class DetectionEnv(Env):
             image_surface.blit(text, (0, 0))
 
             if self.env_mode == 0:
+                marker_ratio = 0.05  # 5% of the window size
+                label_ratio_x = 0.25  # 25% from the right edge of the window
+                label_ratio_y = 0.05  # 5% from the bottom edge of the window
+
                 # Add Step | Reward | IoU  on the image surface at the bottom left corner
-                font = pygame.font.SysFont('Lato', 20)#, bold=True)
+                font_ratio = 0.03  # 5% of the image height
+                font_size = int(font_ratio * self.height)  # Calculate the font size
+                font = pygame.font.SysFont('Lato', font_size)#, bold=True) (font_size was 20 before)
 
                 text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)), True, (255, 255, 255))
-                image_surface.blit(text, (0, self.window_size[1] - 20))
+                image_surface.blit(text, (0, self.window_size[1] - font_size))
 
                 # Create font with Lato, size 30
-                font = pygame.font.SysFont('Lato', 30)
+                font_ratio = 0.07  # 5% of the image height
+                font_size = int(font_ratio * self.height)  # Calculate the font size
+                font = pygame.font.SysFont('Lato', font_size)#, bold=True) (font_size was 30 before)
 
                 # Adding bottom right legend for bounding box colors
+                window_width, window_height = self.window_size  # Get the size of the window
+                target_marker_size = int(marker_ratio * min(window_width, window_height))  # Calculate the marker size
+                prediction_marker_size = target_marker_size  # Same size for prediction marker
+
+                # Calculate the positions of the markers and labels
+                target_marker_position = (int(window_width - label_ratio_x * window_width), int(window_height - label_ratio_y * window_height))
+                target_label_position = (target_marker_position[0] + target_marker_size + 2, target_marker_position[1])
+
+                prediction_marker_position = (int(window_width - 2 * label_ratio_x * window_width), int(window_height - label_ratio_y * window_height))
+                prediction_label_position = (prediction_marker_position[0] + prediction_marker_size + 2, prediction_marker_position[1])
+
+                # Draw the markers and labels
                 # Marker for Ground Truth (using a rectangular marker)
-                target_marker_size = 20
-                pygame.draw.rect(image_surface, target_color, (self.window_size[0] - 180, self.window_size[1] - 20, target_marker_size, target_marker_size))
+                pygame.draw.rect(image_surface, target_color, (*target_marker_position, target_marker_size, target_marker_size))
                 label_text = font.render('Ground Truth', True, target_color)
-                image_surface.blit(label_text, (self.window_size[0] - 150, self.window_size[1] - 20))
+                image_surface.blit(label_text, target_label_position)
 
                 # Marker for Prediction (using a circular marker)
-                prediction_marker_size = 20
-                pygame.draw.circle(image_surface, self.color, (self.window_size[0] - 330 + prediction_marker_size//2, self.window_size[1] - 20 + prediction_marker_size//2), prediction_marker_size//2)
+                pygame.draw.circle(image_surface, self.color, (prediction_marker_position[0] + prediction_marker_size//2, prediction_marker_position[1] + prediction_marker_size//2), prediction_marker_size//2)
                 label_text = font.render('Prediction', True, self.color)
-                image_surface.blit(label_text, (self.window_size[0] - 300, self.window_size[1] - 20))
+                image_surface.blit(label_text, prediction_label_position)
 
             # Draw the original image on the canvas
             canvas.blit(image_surface, (0, 0))
@@ -1291,90 +1316,135 @@ class DetectionEnv(Env):
         Env.close(self)
         pass
     
+    def load_pascal_voc_dataset(self, path='data', year='2007', download=True, image_set='train'):
+        """
+            Function that loads the Pascal VOC dataset.
+        """
+        dataset = datasets.VOCDetection(path, year, image_set, download)
+
+        # Shuffle the dataset
+        indices = torch.randperm(len(dataset))
+        dataset = torch.utils.data.Subset(dataset, indices)
+
+        # Pascal VOC classes
+        self.classes = ['cat', 'bird', 'motorbike', 'diningtable', 'train', 'tvmonitor', 'bus', 'horse', 'car', 'pottedplant', 'person', 'chair', 'boat', 'bottle', 'bicycle', 'dog', 'aeroplane', 'cow', 'sheep', 'sofa']
+
+        self.current_class = self.classes[self.class_index]
+
+        # Sorting the dataset by class
+        dataset = self.sort_pascal_voc_by_class(dataset)
+        
+        self.total_images = 0
+        for c_class in self.classes:
+            self.total_images += len(dataset[c_class])
+        
+        print('\033[92m' + 'Dataset loaded successfully.' + '\033[0m')
+        print('\033[93m' + 'Total number of classes in the dataset:', len(self.classes))
+        print('\033[94m' + 'Total number of images in the dataset:', self.total_images)
+
+        return dataset
+    
+    def sort_pascal_voc_by_class(self, dataset):    
+        """
+            Function that sorts the Pascal VOC dataset by class, by iterating through the dataset and adding the images to the corresponding class.
+
+            Input:
+                - Datasets
+            
+            Output:
+                - Dictionary of datasets (keys: classes, values: all the data of this class)
+        """
+        dataset_per_class = {}
+        # Iterating through the classes
+        for c_class in self.classes:
+            dataset_per_class[c_class] = {}
+
+        # Looping through all the entries in the dataset
+        for entry in dataset:
+            # Extracting the image and the target
+            img, target = entry
+
+            # Extracting the class and the filename
+            classe = target['annotation']['object'][0]["name"]
+            filename = target['annotation']['filename']
+
+            # Creating a dictionary of the dataset
+            org = {}
+
+            # Iterating through the classes
+            for c_class in self.classes:
+
+                # Adding the image to the class
+                org[c_class] = []
+                org[c_class].append(img)
+
+            # Iterating through the objects to retrieve the object bounding box and size for every class
+            for c_object in range(len(target['annotation']['object'])):
+                classe = target['annotation']['object'][c_object]["name"]
+                org[classe].append([target['annotation']['object'][c_object]["bndbox"], target['annotation']['size']])
+            
+            # Iterating through the classes
+            for c_class in self.classes:
+                # If the class has more than one image in the dataset, then we add the image to the class
+                if len( org[c_class] ) > 1:
+                    try:
+                        dataset_per_class[c_class][filename].append(org[c_class])
+                    except KeyError:
+                        dataset_per_class[c_class][filename] = []
+                        dataset_per_class[c_class][filename].append(org[c_class])       
+        # Returning the dataset per class
+        return dataset_per_class
+    
+    def extract(self):
+        """
+            Function that extracts the current image, original image and target bounding box from the dataset.
+        """
+        # Checking whether the dataset image index is greater than the length of the current class dataset, if so, we increment the class index and reset the dataset image index to 0
+        if self.class_image_index >= len(self.dataset[self.current_class]):
+            self.class_index += 1
+
+            # Checking whether the class index is greater than the length of the classes, if so, we reset the class index and dataset image index to 0 and increment the epochs
+            if self.class_index >= len(self.classes):
+                self.class_index = 0
+                self.epochs += 1
+                self.dataset_image_index = 0
+                print('\033[92m' + 'Epoch done.' + '\033[0m')
+
+            self.current_class = self.classes[self.class_index]
+            self.class_image_index = 0
+        
+        # Extracting image per class
+        extracted_imgs_per_class = self.dataset[self.current_class]
+
+        # Finding the key which corresponds to the current class image index
+        img_name = list(extracted_imgs_per_class.keys())[self.class_image_index]
+
+        self.image = extracted_imgs_per_class[img_name][0][0]
+
+        # Converting image to cv2 format
+        self.image = cv2.cvtColor(np.array(self.image), cv2.COLOR_RGB2BGR)
+        self.original_image = self.image.copy()
+
+        self.height = self.image.shape[0]
+        self.width = self.image.shape[1]
+
+        # Extracting the first object
+        first_object = extracted_imgs_per_class[img_name][0][1][0]
+
+        x1, y1, x2, y2 = int(first_object['xmin']), int(first_object['ymin']), int(first_object['xmax']), int(first_object['ymax'])
+
+        self.target_bbox = [x1, y1, x2, y2]
+        
+        # Incrementing the class image index
+        self.class_image_index += 1
+
+        # Incrementing the dataset image index
+        self.dataset_image_index += 1
+        pass
+
     def generate_initial_bbox(self, threshold):
         """
             Function that generates an initial bounding box prediction based on Saliency Ranking.
 
         """
         pass
-    # ---------------------------------------------- Not used ----------------------------------------------
-
-    # def reward_penalty(self):
-    #     """
-    #         Calculating the reward penalty for those actions which do the opposite of the previous action.
-
-    #         Output:
-    #             - Reward penalty
-
-    #     """
-    #     penalty = 0
-    #     # Creating the action vector.
-    #     action_vector = [0] * 9
-    #     # Setting the current action to 1, based on the reward penalty dictionary which maps the action to the opposite action.
-    #     if self.current_action in self.reward_penalty_dict.keys():
-    #         action_vector[self.reward_penalty_dict[self.current_action]] = 1
-
-    #     # print("Action vector: ", action_vector, "Actions history: ", self.actions_history)
-        
-    #     # Iterating over the history of the actions backwards.
-    #     for i in range(len(self.actions_history)-1, -1, -1):
-            
-    #         # Checking if the action vector is equal to the action vector in the history of the actions, if yes we add the index to the penalty.
-    #         if  action_vector == self.actions_history[i]:
-    #             penalty += i
-
-    #     # Returning the reward penalty.
-    #     return penalty
-
-
-    # def update_threshold(self):
-    #     """
-    #         Updating the threshold.
-        
-    #         Formula:
-    #             threshold = max_threshold - (max_threshold / (1.0 + exp(growth_rate * num_episodes)))
-    #     """
-    #     # Calculating the new threshold, by growing the threshold.
-    #     self.threshold = self.max_threshold - (self.max_threshold / (1.0 + math.exp(self.growth_rate * self.num_episodes)))
-
-    #     # Clipping the threshold.
-    #     self.threshold = min(self.threshold, self.max_threshold)
-
-    # def transform_action(self, action):
-    #     """
-    #         Function that applies the action to the image.
-        
-    #         Input:
-    #             - Action to apply
-
-    #         Output:
-    #             - Bounding box of the image depending on the action mode
-    #     """
-    #     if self.action_mode == 0:
-    #         return self.transform_action_0(action)
-    #     elif self.action_mode == 1:
-    #         return self.transform_action_1(action)
-
-    # def get_actions(self):
-    #     """
-    #         Function that prints the name of the actions depending on the action mode.
-    #     """
-    #     if self.action_mode == 0:
-    #         self.get_actions_0()
-    #     elif self.action_mode == 1:
-    #         self.get_actions_1()
-
-    # def decode_action(self, action):
-    #     """
-    #         Function that decodes the action depending on the action mode.
-
-    #         Input:
-    #             - Action to decode
-
-    #         Output:
-    #             - Decoded action
-    #     """
-    #     if self.action_mode == 0:
-    #         self.decode_action_0(action)
-    #     elif self.action_mode == 1:
-    #         self.decode_action_1(action)

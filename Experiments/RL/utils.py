@@ -4,7 +4,7 @@ import numpy as np
 from collections import namedtuple, deque
 
 # Setting the device to cpu as it was faster than gpu for this task
-device = torch.device("cpu")#torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")#torch.device("cpu")
 
 # Defining use_cuda as True if cuda is available, False otherwise.
 use_cuda = torch.cuda.is_available()
