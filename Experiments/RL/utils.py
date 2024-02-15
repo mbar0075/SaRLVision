@@ -1,6 +1,7 @@
 import torch
 import random
 import numpy as np
+import pandas as pd
 from collections import namedtuple, deque
 
 # Setting the device to cpu as it was faster than gpu for this task
@@ -209,3 +210,179 @@ def recall(bbox, target_bbox):
 
     # Returning the recall
     return recall
+
+def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
+    """
+        Calculating the precision and recall using the Intersection over Union (IoU) and according to the threshold between the ground truths and the predictions.
+
+        Args:
+            bounding_boxes: The predicted bounding boxes.
+            gt_boxes: The ground truth bounding boxes.
+            ovthresh: The IoU threshold.
+
+        Returns:
+            precision (tp / (tp + fp))
+            recall (tp / (tp + fn))
+            f1 score (2 * (precision * recall) / (precision + recall))
+            average IoU (sum of IoUs / number of bounding boxes)
+            average precision (sum of precisions / number of bounding boxes)
+    """
+    # Retrieving the number of bounding boxes
+    num_bounding_boxes = len(bounding_boxes)
+    num_gt_boxes = num_bounding_boxes
+
+    # Ensuring that the number of bounding boxes is the same as the number of ground truth boxes
+    assert num_bounding_boxes == num_gt_boxes, "Evaluation Error: The number of bounding boxes must be the same as the number of ground truth boxes."
+
+    # Initializing the true positives, false positives and false negatives
+    tp = np.zeros(num_bounding_boxes)
+    fp = np.zeros(num_bounding_boxes)
+    fn = np.zeros(num_bounding_boxes)
+
+    # Initializing the IoU, precision and recall
+    iou = np.zeros(num_bounding_boxes)
+    precision = np.zeros(num_bounding_boxes)
+    recall = np.zeros(num_bounding_boxes)
+
+    # Iterating through the bounding boxes
+    for index in range(num_bounding_boxes):
+        # Retrieving the bounding boxes
+        prediction = bounding_boxes[index]
+        target = gt_boxes[index]
+
+        # Calculating the IoU
+        iou[index] = iou(prediction, target)
+
+        # Calculating the precision and recall
+        if iou[index] > ovthresh:
+            tp[index] = 1.0
+        else:
+            fp[index] = 1.0
+            fn[index] = 1.0
+
+    # Calculating the precision and recall
+    tp = np.cumsum(tp)
+    fp = np.cumsum(fp)
+    fn = np.cumsum(fn)
+
+    # Calculating the precision and recall for each bounding box (finfo is used to avoid division by zero)
+    precision = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
+    recall = tp / np.maximum(tp + fn, np.finfo(np.float64).eps)
+
+    # Calculating the f1 score
+    f1_score = 2 * (precision * recall) / (precision + recall)
+
+    # Calculating the average IoU
+    avg_iou = np.mean(iou)
+
+    # Calculating the average precision
+    avg_precision = np.mean(precision)
+
+    # Returning the precision, recall, f1 score, average IoU and average precision
+    return precision, recall, f1_score, avg_iou, avg_precision
+
+def voc_ap(rec, prec):
+    """
+        Calculating the VOC detection metric.
+
+        Args:
+            rec: The recall values.
+            prec: The precision values.
+
+        Returns:
+            The average precision.
+    """
+    # Append 0.0 to the beginning and 1.0 to the end of the recall array,
+    # and append 0.0 to the beginning and end of the precision array.
+    # This is done to ensure that the precision-recall curve starts from (0,0) and ends at (1,0).
+    mrec = np.concatenate(([0.0], rec, [1.0]))
+    mpre = np.concatenate(([0.0], prec, [0.0]))
+
+    # Replace each precision value with the maximum precision value to its right.
+    # This is done to compute the precision envelope, which is needed to calculate AP.
+    for i in range(mpre.size - 1, 0, -1):
+        mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
+
+    # Find the indices where the recall value changes.
+    # These are the points where the precision-recall curve steps down.
+    i = np.where(mrec[1:] != mrec[:-1])[0]
+
+    # Calculate AP as the sum of the products of the differences in recall and the corresponding precision values.
+    # This is equivalent to calculating the area under the precision-recall curve.
+    ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
+
+    # Return the calculated AP.
+    return ap
+
+def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, ovthresh):
+    """
+        Calculating the VOC detection metric.
+
+        Args:
+            current_class: The current class/label.
+            bounding_boxes: The predicted bounding boxes.
+            gt_boxes: The ground truth bounding boxes.
+            ovthresh: The IoU threshold.
+
+        Returns:
+            The average precision.
+    """
+    # Calculating the precision and recall
+    prec, rec, f1_score, avg_iou, avg_precision = calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh)
+
+    # Calculating the average precision
+    ap = voc_ap(rec, prec)
+
+    # Returning all the metrics in a dictionary
+    return {"class": current_class, "precision": prec, "recall": rec, "f1_score": f1_score, "average_iou": avg_iou, "average_precision": avg_precision, "average_precision_voc": ap, "iou_threshold": ovthresh, "num_images": len(bounding_boxes)}
+
+def calculate_detection_metrics(results):
+    """
+        Calculating the detection metrics for all the classes.
+
+        Args:
+            results: The results of the detection.
+
+        Returns:
+            An array of pandas dataframes containing the detection metrics for each class at given IoU thresholds.
+            mAps: The mean average precision for each class at given IoU thresholds.
+    """
+    # Retrieving the classes
+    classes = results.keys()
+
+    # Initializing list of dataframes to store the detection metrics for each class and mean average precision
+    dfs = []
+    mAps = {}
+
+    # Iterating through the threshold values
+    for ovthresh in np.arange(0.5, 1.0, 0.05):
+
+        # Storing the average precision for each class at given IoU thresholds
+        aps = {}
+
+        # Creating a dataframe to store the detection metrics for each threshold
+        df = pd.DataFrame(columns=["class", "precision", "recall", "f1_score", "average_iou", "average_precision", "average_precision_voc", "iou_threshold", "num_images"])
+
+        # Iterating through the classes
+        for current_class in classes:
+            # Retrieving the bounding boxes and ground truth boxes
+            bounding_boxes = results[current_class]["bounding_boxes"]
+            gt_boxes = results[current_class]["gt_boxes"]
+
+            # Calculating the detection metrics
+            detection_metrics = calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, ovthresh)
+
+            # Appending the detection metrics to the dataframe
+            df = df.append(detection_metrics, ignore_index=True)
+
+            # Storing the average precision for each class at given IoU thresholds
+            aps[current_class] = detection_metrics["average_precision_voc"]
+
+        # Calculating the mean average precision for each class at given IoU thresholds
+        mAps[ovthresh] = np.mean(list(aps.values()))
+
+        # Appending the dataframe to the list of dataframes
+        dfs.append(df)
+
+    # Returning the list of dataframes and the mean average precision
+    return dfs, mAps

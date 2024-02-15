@@ -43,6 +43,8 @@ CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
 REWARD_FUNC = iou
 ENV_MODE = 0 # 0 for training, 1 for testing
 USE_DATASET = None # Whether to use the dataset or not, or to use the image directly
+DATASET_YEAR = '2007' # Pascal VOC Dataset Year
+DATASET_IMAGE_SET = 'train'
 
 
 class DetectionEnv(Env):
@@ -69,11 +71,24 @@ class DetectionEnv(Env):
         """
         super(DetectionEnv, self).__init__()
 
+        # dataset variables
         if 'dataset' in env_config:
             self.use_dataset = env_config['dataset']
             del env_config['dataset']
         else:
             self.use_dataset = USE_DATASET
+
+        if 'dataset_year' in env_config:
+            self.dataset_year = env_config['dataset_year']
+            del env_config['dataset_year']
+        else:
+            self.dataset_year = DATASET_YEAR
+
+        if 'dataset_image_set' in env_config:
+            self.dataset_image_set = env_config['dataset_image_set']
+            del env_config['dataset_image_set']
+        else:
+            self.dataset_image_set = DATASET_IMAGE_SET
 
         # Variable to hold the number of epochs
         self.epochs = 0
@@ -85,7 +100,7 @@ class DetectionEnv(Env):
 
         if self.use_dataset is not None:
             self.dataset_image_index = 0
-            self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset)
+            self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset, year=self.dataset_year, image_set=self.dataset_image_set)
             self.extract()
         else:
             # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
