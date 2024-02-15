@@ -63,14 +63,19 @@ class DQNAgent():
         self.epsilon = EPS_START
         self.steps_done = 0
         self.episodes = 0
-        self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "iou": [], "recall": [],  "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
+        self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "avg_iou": [], "iou": [], "recall": [], "avg_recall": [], "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
         self.display_every_n_episodes = 1
 
     def select_action(self, state):
         """ Selects an action using an epsilon greedy policy """
         # Selecting a random action with probability epsilon
         if random.random() <= self.epsilon: # Exploration
-            action = self.env.action_space.sample()
+            if self.env.env_mode == 0: # Training mode
+                # Expert agent action selection
+                action = self.expert_agent_action_selection()
+            else:# Testing mode
+                # Normal Random action Selection
+                action = self.env.action_space.sample()
         else: # Exploitation
             # Selecting the action with the highest Q-value otherwise
             with torch.no_grad():
@@ -78,6 +83,45 @@ class DQNAgent():
                 qvalues = self.policy_net(state)
                 action = qvalues.argmax().item()
         return action
+    
+    def expert_agent_action_selection(self):
+        """ Selects an action using an expert agent, by calculating the reward for each action and selecting a random action from the positive actions if the list is not empty, otherwise selecting a random action from the negative actions.
+
+            Returns:
+                action: The action selected by the expert agent
+        """
+        # Creating lists to hold the positive actions and negative actions
+        positive_actions = []
+        negative_actions = []
+        
+        # Retrieving the bounding box from the environment
+        old_state = self.env.bbox
+
+        # Retrieving the target bounding box from the environment
+        target_bbox = self.env.target_bbox
+
+        # Looping through the actions
+        for action in range(self.noutputs):
+            # Retrieving the new state
+            new_state = self.env.transform_action(action)
+
+            # Calculating the reward
+            if action < 8:
+                reward = self.env.calculate_reward(new_state, old_state, target_bbox)
+            else:
+                reward = self.env.calculate_trigger_reward(new_state, target_bbox)
+
+            # Appending the action to the positive or negative actions list based on the reward
+            if reward > 0:
+                positive_actions.append(action)
+            else:
+                negative_actions.append(action)
+
+        # Returning a random choice from the positive actions if the list is not empty
+        if len(positive_actions) > 0:
+            return random.choice(positive_actions)
+        else:
+            return random.choice(negative_actions)
         
     def update(self):
         """ Updates the policy network using a batch of transitions """
@@ -145,6 +189,10 @@ class DQNAgent():
             # Taking a step in the environment
             new_obs, reward, terminated, truncated, info = self.env.step(action)
 
+            # Adding the IoU and recall to the episode info
+            self.episode_info["iou"].append(info["iou"])
+            self.episode_info["recall"].append(info["recall"])
+
             # Adding the reward to the cumulative reward
             episode_reward += reward
 
@@ -185,35 +233,39 @@ class DQNAgent():
                     self.episode_info["best_episode"]["episode"] = self.episodes
                     self.episode_info["best_episode"]["avg_reward"] = self.episode_info["episode_avg_rewards"][-1]
 
-                # Retrieving iou
-                iou = info["iou"]
+                # Calculating the average IoU and recall
+                avg_iou = np.mean(self.episode_info["iou"][-self.env.step_count:])
+                avg_recall = np.mean(self.episode_info["recall"][-self.env.step_count:])
 
-                # Retrieving recall
-                recall = info["recall"]
-
-                # Appending the iou
-                self.episode_info["iou"].append(iou)
-
-                # Appending the recall
-                self.episode_info["recall"].append(recall)
+                # Appending the average IoU and recall
+                self.episode_info["avg_iou"].append(avg_iou)
+                self.episode_info["avg_recall"].append(avg_recall)
 
                 # Checking if the environment is solved
                 # if np.mean(self.episode_info["episode_avg_rewards"][-MAX_REPLAY_SIZE:]) >= SUCCESS_CRITERIA:
                 #     self.episode_info["solved"] = True
                 # If the last 50 episodes had an average IoU of 0.75 or more, the environment is considered solved
-                if np.mean(self.episode_info["iou"][-50:]) >= SUCCESS_CRITERIA:
-                    self.episode_info["solved"] = True
+                # if np.mean(self.episode_info["iou"][-50:]) >= SUCCESS_CRITERIA:
+                #     self.episode_info["solved"] = True
 
+                if USE_EPISODE_CRITERIA:
+                    # If the environment number of episodes is greater than SUCCESS_CRITERIA, the environment is considered solved
+                    if self.episodes >= SUCCESS_CRITERIA_EPS:
+                        self.episode_info["solved"] = True
+                else:
+                    # If the environment number of epochs is greater than SUCCESS_CRITERIA, the environment is considered solved
+                    if self.env.epochs >= SUCCESS_CRITERIA_EPOCHS:
+                        self.episode_info["solved"] = True
                 
                 # Displaying the results
                 if self.episodes % self.display_every_n_episodes == 0:
-                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {} \033[35mIoU:\033[0m {:.2f} \033[35mRecall:\033[0m {:.2f}".format(
+                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {} \033[35mAverage IoU:\033[0m {:.2f} \033[35mAverage Recall:\033[0m {:.2f}".format(
                                 self.episodes,
                                 self.epsilon,
                                 self.episode_info["episode_avg_rewards"][-1],
                                 self.episode_info["episode_lengths"][-1],
-                                iou,
-                                recall)
+                                avg_iou,
+                                avg_recall)
                         )
                     print("-" * 100)
 
@@ -224,7 +276,7 @@ class DQNAgent():
 
                 # Checking if the environment is solved
                 if self.episode_info["solved"]:
-                    print("\033[32mSolved in {} episodes!\033[0m".format(self.episodes))
+                    print("\033[32mCompleted {} episodes!\033[0m".format(self.episodes))
                     print("-" * 100)
                     break
 
@@ -286,8 +338,8 @@ class DQNAgent():
             if terminated or truncated:
                 break
 
-        # Predicted bounding box
-        pred_bbox = self.env.predict(do_display=False)
+        # # Predicted bounding box
+        # pred_bbox = self.env.predict(do_display=False)
 
         # Add final frame
         frames.append(self.env.render())# Final frame with label

@@ -40,13 +40,17 @@ MIN_REPLAY_SIZE = 250#5000
 # The maximum replay size is the maximum number of transitions that can be stored in the replay buffer.
 MAX_REPLAY_SIZE = 50
 # Epsilon start, epsilon end and epsilon decay are the parameters for the epsilon greedy exploration strategy.
-EPS_START = 0.9
-EPS_END = 0.0005
+EPS_START = 1.0
+EPS_END = 0.1
 EPS_DECAY = 0.9#9
 # The target update frequency is the frequency with which the target network is updated.
 TARGET_UPDATE_FREQ = 5
-# The success criteria is the average reward over the last 50 episodes that the agent must achieve to be considered successful.
-SUCCESS_CRITERIA = 0.92
+# The success criteria is the number of episodes the agent needs to solve the environment in order to consider the environment solved.
+SUCCESS_CRITERIA_EPS = 100
+# Success criteria for the the number of epochs to train the model
+SUCCESS_CRITERIA_EPOCHS = 15
+# Boolean Flag to determine which success criteria to use
+USE_EPISODE_CRITERIA = True
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
 

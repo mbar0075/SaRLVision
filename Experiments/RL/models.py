@@ -37,11 +37,11 @@ class VGG16FeatureExtractor(nn.Module):
         vgg16_model.eval() # Setting the model in evaluation mode to not do dropout.
         self.features = list(vgg16_model.children())[0] # Retrieving the first child of the model, which is typically the feature extraciton part of the model
         self.classifier = nn.Sequential(*list(vgg16_model.classifier.children())[:-2]) # Retrieving the feature extraction part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
-        self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
+        # self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
 
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x) # Applying the feature extraction part of the model
-        x = self.adaptive_pooling(x) # Applying the adaptive pooling layer
+        # x = self.adaptive_pooling(x) # Applying the adaptive pooling layer
         x = torch.flatten(x, 1) # Flattening the output of the model
         # print(x.shape) # Printing the shape of the output
         return x
@@ -57,11 +57,11 @@ class ResNet50FeatureExtractor(nn.Module):
         resnet50_model.eval() # Setting the model in evaluation mode to not do dropout.
         modules = list(resnet50_model.children())[:-2] # Retrieving the first child of the model, which is typically the feature extraciton part of the model
         self.features = nn.Sequential(*modules) # Retrieving the feature extraction part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
-        self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
+        # self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Defining the adaptive pooling layer to be used to transform the output of the model to a fixed size
     
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x) # Applying the feature extraction part of the model
-        x = self.adaptive_pooling(x) # Applying the adaptive pooling layer
+        # x = self.adaptive_pooling(x) # Applying the adaptive pooling layer
         x = torch.flatten(x, 1) # Flattening the output of the model
         # print(x.shape) # Printing the shape of the output
         return x
@@ -76,11 +76,11 @@ class MobileNetV2FeatureExtractor(nn.Module):
         mobilenetv2 = mobilenet_v2(pretrained=True)
         mobilenetv2.eval() # Setting the model in evaluation mode to not do dropout.
         self.features = mobilenetv2.features  # Extract features using the predefined function
-        self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Define the adaptive pooling layer
+        # self.adaptive_pooling = nn.AdaptiveAvgPool2d((2, 2)) # Define the adaptive pooling layer
     
     def forward(self, x):
         x = self.features(x)  # Feature extraction
-        x = self.adaptive_pooling(x)  # Adaptive pooling
+        # x = self.adaptive_pooling(x)  # Adaptive pooling
         x = torch.flatten(x, 1)  # Flatten the output
         # print(x.shape) # Printing the shape of the output
         return x
@@ -125,28 +125,6 @@ def transform_input(image, target_size):
 #     def forward(self, x):
 #         return self.classifier(x)
 
-# class DQN(nn.Module):
-#     def __init__(self, input_size, output_size):
-#         super(DQN, self).__init__()        
-#         # Define the layers of the model based on the input size and output size
-#         self.classifier = nn.Sequential(
-#             nn.Linear(input_size, 256),  # Adjusted layer size
-#             nn.ReLU(),
-#             nn.Dropout(0.2),
-#             nn.Linear(256, 256),  # Additional layer
-#             nn.ReLU(),
-#             nn.Dropout(0.2),
-#             nn.Linear(256, 128),  # Additional layer
-#             nn.ReLU(),
-#             nn.Dropout(0.2),
-#             nn.Linear(128, output_size)  # 'output_size' denotes the number of output actions
-#         )
-
-#     def forward(self, x):
-#         return self.classifier(x)
-    
-#     def __call__(self, X):
-#         return self.forward(X)
 class DQN(nn.Module):
     """
         The DQN network that estimates the action-value function
@@ -174,6 +152,55 @@ class DQN(nn.Module):
 
     def __call__(self, X):
         return self.forward(X)
+
+class DQN2(nn.Module):
+    """
+    The DQN network that estimates the action-value function
+
+    Args:
+        ninputs: The number of inputs
+        noutputs: The number of outputs
+
+    Layers:
+        1. Linear layer with ninputs neurons
+        2. Batch Normalization
+        3. ReLU activation function
+        4. Linear layer with ninputs//2 neurons
+        5. Batch Normalization
+        6. ReLU activation function
+        7. Linear layer with ninputs//4 neurons
+        8. Batch Normalization
+        9. ReLU activation function
+        10. Linear layer with ninputs//8 neurons
+        11. Batch Normalization
+        12. ReLU activation function
+        13. Linear layer with noutputs neurons
+    """
+    def __init__(self, ninputs, noutputs):
+        super(DQN2, self).__init__()
+        self.classifier = nn.Sequential(
+            nn.Linear(ninputs, ninputs),
+            nn.BatchNorm1d(ninputs),
+            nn.ReLU(),
+            nn.Linear(ninputs, ninputs // 2),
+            nn.BatchNorm1d(ninputs // 2),
+            nn.ReLU(),
+            nn.Linear(ninputs // 2, ninputs // 4),
+            nn.BatchNorm1d(ninputs // 4),
+            nn.ReLU(),
+            nn.Linear(ninputs // 4, ninputs // 8),
+            nn.BatchNorm1d(ninputs // 8),
+            nn.ReLU(),
+            nn.Linear(ninputs // 8, noutputs)
+        )
+
+    def forward(self, X):
+        # Forward pass
+        return self.classifier(X)
+
+    def __call__(self, X):
+        return self.forward(X)
+
 
 class DuelingDQN(nn.Module):
     """

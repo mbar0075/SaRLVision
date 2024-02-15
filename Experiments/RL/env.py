@@ -28,14 +28,15 @@ import MaskToAnnotation.vgg as vgg
 import MaskToAnnotation.annotation_helper as ah
 
 # Constants
-NUMBER_OF_ACTIONS = 8
-ACTION_HISTORY_SIZE = 20
+NUMBER_OF_ACTIONS = 9
+ACTION_HISTORY_SIZE = 10
 ACTION_HISTORY = [[0]*NUMBER_OF_ACTIONS]*ACTION_HISTORY_SIZE
 NU = 3.0 # Reward of Trigger
-THRESHOLD = 0.9#0.95 # Stopping criterion for the trigger
-ALPHA = 0.1#0.1 #0.15 # Scaling factor for bounding box movements
-MAX_STEPS = 100#200#50 # Maximum number of steps
-RENDER_MODE = 'human'# None, 'rgb_array', 'bbox', 'sara'
+THRESHOLD = 0.6#Stopping criterion for threshold, use 0.5 for testing
+ALPHA = 0.2#0.1 #0.15 # Scaling factor for bounding box movements
+MAX_STEPS = 200#200#50 # Maximum number of steps
+TRIGGER_STEPS = 40 # Number of steps before the trigger
+RENDER_MODE = 'human'# None, 'rgb_array', 'bbox', 'trigger_image'
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
 CLASSIFIER = ResNet50V2()
@@ -49,7 +50,7 @@ DATASET_IMAGE_SET = 'train'
 
 class DetectionEnv(Env):
     # Metadata for the environment
-    metadata = {"render_modes": ["human", "rgb_array", "bbox", "sara"], "render_fps": 3}
+    metadata = {"render_modes": ["human", "rgb_array", "bbox", "trigger_image"], "render_fps": 3}
     
     def __init__(self, env_config={}):
         """
@@ -70,6 +71,9 @@ class DetectionEnv(Env):
                 - Environment
         """
         super(DetectionEnv, self).__init__()
+        # Initializing the current ground truth bounding boxes
+        self.current_gt_bboxes = []
+        self.current_gt_index =0
 
         # dataset variables
         if 'dataset' in env_config:
@@ -114,10 +118,11 @@ class DetectionEnv(Env):
             self.original_image = env_config['original_image']
             del env_config['original_image']
 
-            if 'target_bbox' not in env_config:
-                raise ValueError('Target bounding box is required for Environment Creation')
-            self.target_bbox = env_config['target_bbox']
-            del env_config['target_bbox']
+            if 'target_gt_boxes' not in env_config:
+                raise ValueError('Target bounding boxes is required for Environment Creation')
+            self.current_gt_bboxes = env_config['target_gt_boxes']
+            self.target_bbox = self.current_gt_bboxes[self.current_gt_index]
+            del env_config['target_gt_boxes']
 
         self.height = self.image.shape[0]
         self.width = self.image.shape[1]
@@ -171,6 +176,15 @@ class DetectionEnv(Env):
         else:
             self.max_steps = MAX_STEPS
 
+        if 'trigger_steps' in env_config:
+            self.trigger_steps = env_config['trigger_steps']
+            del env_config['trigger_steps']
+        else:
+            self.trigger_steps = TRIGGER_STEPS
+
+        # Setting the number of triggers to 0
+        self.no_of_triggers = 0
+
         if 'alpha' in env_config:
             self.alpha = env_config['alpha']
             del env_config['alpha']
@@ -195,8 +209,7 @@ class DetectionEnv(Env):
             self.threshold = THRESHOLD
 
         # Classification part
-        self.label = None
-        self.label_confidence = None
+        self.classification_dictionary = {'label': [], 'confidence': [], 'bbox': []}
 
         if 'classifier' in env_config:
             self.classifier = env_config['classifier']
@@ -242,9 +255,12 @@ class DetectionEnv(Env):
         # For environment mode
         self.env_mode = ENV_MODE
 
+        # For segmentation
+        self.segmentation_dictionary = {'bboxes': [], 'masks': [], 'names': [], 'labels': []}
+
         # For model (bounding box) checkpoint
-        self.best_iou = 0
-        self.best_bbox = self.bbox
+        # self.best_iou = 0
+        # self.best_bbox = self.bbox
         pass
 
     def train(self):
@@ -281,8 +297,39 @@ class DetectionEnv(Env):
         # Calculating the reward.
         reward = iou_current - iou_previous
 
+        # Enabling binary reward in the range of {-1, 1}
+        if reward > 0:
+            reward = 1
+        elif reward < 0:
+            reward = -1
+
         # Returning the reward.
-        return reward 
+        return reward
+    
+    def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
+        """
+            Calculating the reward.
+
+            Input:
+                - Current state
+                - Target bounding box
+                - Reward function
+
+            Output:
+                - Reward
+        """
+        # Calculating the IoU between the current state and the target bounding box.
+        iou_current = reward_function(current_state, target_bbox)
+
+        # Calculating the reward.
+        reward = iou_current
+
+        # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
+        if reward >= self.threshold:
+            return self.nu
+        
+        # Returning -1*trigger reward.
+        return -1*self.nu
     
     def get_features(self, image, dtype=FloatTensor):
         """
@@ -338,7 +385,7 @@ class DetectionEnv(Env):
     def update_history(self, action):
         """
             Function that updates the history of the actions by adding the last one.
-            It is creating a history vector of size 8, where each element is 0 except the one corresponding to the action performed.
+            It is creating a history vector of size 9, where each element is 0 except the one corresponding to the action performed.
             It is then shifting the history vector by one and adding the new action vector to the history vector.
 
             Input:
@@ -354,7 +401,7 @@ class DetectionEnv(Env):
         # Retrieving the size of the history list.
         size_history_list = len(self.actions_history)
 
-        # If the size of the history list is smaller than 8, we add the action vector to the history vector.
+        # If the size of the history list is smaller than the number of actions, we add the action vector to the history vector.
         if size_history_list < NUMBER_OF_ACTIONS:
             self.actions_history.append(action_vector)
         else:
@@ -394,18 +441,18 @@ class DetectionEnv(Env):
         xmin, xmax, ymin, ymax = bbox[0], bbox[2], bbox[1], bbox[3]
 
         # Calculating the alpha_h and alpha_w mentioned in the paper.
-        # alpha_h = int(self.alpha * (  ymax - ymin ))
-        # alpha_w = int(self.alpha * (  xmax - xmin ))
+        alpha_h = int(self.alpha * (  ymax - ymin ))
+        alpha_w = int(self.alpha * (  xmax - xmin ))
 
-        reduction_factor = 0.01  # Reduction factor
-        max_reduction = 0.01  # Maximum reduction to prevent convergence to zero
+        # reduction_factor = 0.01  # Reduction factor
+        # max_reduction = 0.01  # Maximum reduction to prevent convergence to zero
 
-        # Calculate the reduction factor based on the step count
-        normalized_reduction_factor = max_reduction + (1 - max_reduction) * math.exp(-reduction_factor * self.step_count)
+        # # Calculate the reduction factor based on the step count
+        # normalized_reduction_factor = max_reduction + (1 - max_reduction) * math.exp(-reduction_factor * self.step_count)
 
-        # Calculate alpha_h and alpha_w with the adjusted reduction factor
-        alpha_h = int(self.alpha * (ymax - ymin) * normalized_reduction_factor)
-        alpha_w = int(self.alpha * (xmax - xmin) * normalized_reduction_factor)
+        # # Calculate alpha_h and alpha_w with the adjusted reduction factor
+        # alpha_h = int(self.alpha * (ymax - ymin) * normalized_reduction_factor)
+        # alpha_w = int(self.alpha * (xmax - xmin) * normalized_reduction_factor)
 
         # If the action is 0, we move the bounding box to the right.
         if action == 0:
@@ -460,6 +507,7 @@ class DetectionEnv(Env):
         print('\033[36m' + "5: Make smaller -" + '\033[0m')
         print('\033[37m' + "6: Make fatter W" + '\033[0m')
         print('\033[38m' + "7: Make taller H" + '\033[0m')
+        print('\033[1m' + "8: Trigger T" + '\033[0m')
         pass
 
     def decode_action(self, action):
@@ -496,6 +544,9 @@ class DetectionEnv(Env):
         # If the action is 7, we print the name of the action.
         elif action == 7:
             print('\033[38m' + "Action: Make taller H" + '\033[0m')
+        # If the action is 8, we print the name of the action.
+        elif action == 8:
+            print('\033[1m' + "8: Trigger T" + '\033[0m')
         pass
 
     def rewrap(self, coordinate, size):
@@ -537,8 +588,7 @@ class DetectionEnv(Env):
             'iou': iou(self.bbox, self.target_bbox),
             'recall': recall(self.bbox, self.target_bbox),
             'threshold': self.threshold,
-            'label': self.label,
-            'label_confidence': self.label_confidence,
+            'classification_dictionary': self.classification_dictionary,
         }
     
     def generate_random_color(self, threshold=0.3):
@@ -597,6 +647,8 @@ class DetectionEnv(Env):
                 self.height = self.image.shape[0]
                 self.width = self.image.shape[1]
                 del env_config['image']
+            else:
+                self.image = self.original_image.copy() # Since the image is changed during the process, we need to keep the original image
 
             if 'original_image' in env_config:
                 self.original_image = env_config['original_image']
@@ -605,6 +657,15 @@ class DetectionEnv(Env):
             if 'target_bbox' in env_config:
                 self.target_bbox = env_config['target_bbox']
                 del env_config['target_bbox']
+
+            if 'target_gt_boxes' in env_config:
+                self.current_gt_bboxes = env_config['target_gt_boxes']
+                self.target_bbox = self.current_gt_bboxes[self.current_gt_index]
+                del env_config['target_gt_boxes']
+
+        self.current_gt_index = 0
+        # Resetting the number of triggers to 0
+        self.no_of_triggers = 0
 
         if 'target_size' in env_config:
             self.target_size = env_config['target_size']
@@ -659,8 +720,7 @@ class DetectionEnv(Env):
         self.transform = transform_input(self.image, self.target_size)
 
         # Classification part
-        self.label = None
-        self.label_confidence = None
+        self.classification_dictionary = {'label': [], 'confidence': [], 'bbox': []}
         
         if 'classifier' in env_config:
             self.classifier = env_config['classifier']
@@ -701,8 +761,11 @@ class DetectionEnv(Env):
         self.color = self.generate_random_color()
 
         # For model (bounding box) checkpoint
-        self.best_iou = 0
-        self.best_bbox = self.bbox
+        # self.best_iou = 0
+        # self.best_bbox = self.bbox
+
+        # For segmentation
+        self.segmentation_dictionary = {'bboxes': [], 'masks': [], 'names': [], 'labels': []}
 
         # Returning the observation space.
         return self.get_state(), self.get_info()
@@ -735,60 +798,102 @@ class DetectionEnv(Env):
         # Retrieving the Label and the confidence of the image.
         label = decode_predictions(preds, top=1)[0][0]
 
-        # Retrieving the label and the confidence.
-        self.label = label[1]
-        self.label_confidence = label[2]
-
-        # Returning the label and the confidence.
-        return self.label, self.label_confidence
+        # Storing the label and the confidence and the bounding box in the classification dictionary.
+        self.classification_dictionary['label'].append(label[1])
+        self.classification_dictionary['confidence'].append(label[2])
+        self.classification_dictionary['bbox'].append(self.bbox)
+        pass
     
-    def predict(self, do_display=True):
+    def predict(self, do_display=True, do_save=False, save_path=None):
         """
             Function that predicts the label of the image.
         """
-        # Retrieving the label and the confidence of the image.
-        self.get_label()
-        
+
         # Displaying the image.
-        image = self.display(mode='image', do_display=do_display, text_display=True)
+        image = self.display(mode='detection', do_display=do_display, text_display=True)
         
+        # Saving the image.
+        if do_save:
+            # If the save path is not provided, then create the path.
+            if save_path is None:
+                os.makedirs(save_path, exist_ok=True)
+                save_path = os.path.join(save_path, 'image' + str(self.step_count) + str(self.current_gt_index) + '.png')
+            # Save the image
+            cv2.imwrite(save_path, image)
+
         # Returning the image.
         return image
+
+    def restart_and_change_state(self):
+        """
+            Function that restarts the environment and changes the state.
+        """
+        if self.env_mode == 0: # Training mode
+            # Incrementing the current ground truth index
+            self.current_gt_index += 1
+
+            if self.current_gt_index == len(self.current_gt_bboxes): # Restart the environment
+                self.current_gt_index = 0
+                # self.terminated = True
+
+            # Retrieving the current ground truth bounding box
+            self.target_bbox = self.current_gt_bboxes[self.current_gt_index]
+
+        # Drawing an IoR (Inhibition of Return) cross on the image based on the current bounding box
+        self.image = self.draw_ior_cross(self.image.copy(), self.bbox)
+
+        # Predicting the label of the image
+        self.get_label()
+
+        # Resetting bounding box to start from either of the corners and instead of having the whole image size, it will have a 75% of the image size
+        if self.no_of_triggers % 4 == 0:
+            self.bbox = [0, 0, int(self.width*0.75), int(self.height*0.75)]
+        elif self.no_of_triggers % 4 == 1:
+            self.bbox = [int(self.width*0.25), 0, self.width, int(self.height*0.75)]
+        elif self.no_of_triggers % 4 == 2:
+            self.bbox = [0, int(self.height*0.25), int(self.width*0.75), self.height]
+        elif self.no_of_triggers % 4 == 3:
+            self.bbox = [int(self.width*0.25), int(self.height*0.25), self.width, self.height]
+
+        # Incrementing the number of triggers
+        self.no_of_triggers += 1
+
+        
+    def draw_ior_cross(self, image, bbox, color=(0, 0, 0)):
+        """
+            Function that draws an IoR (Inhibition of Return) cross on the image based on the current bounding box.
+
+            Input:
+                - Image
+                - Bounding box
+                - Color
+                - Thickness
+
+            Output:
+                - Image with the IoR cross
+        """
+        # Retrieving the coordinates of the bounding box.
+        x1, y1, x2, y2 = bbox
+
+        # Calculating box width and height
+        width = x2 - x1
+        height = y2 - y1
+
+        # Calculating the thickness of the IoR cross.
+        thickness = max(5, int(min(width, height) / 7))
+
+        # Calculating the center of the bounding box.
+        center = ((x1 + x2) // 2, (y1 + y2) // 2)
+
+        # Drawing the horizontal line of the IoR cross.
+        cv2.line(image, (center[0], y1), (center[0], y2), color, thickness)
+
+        # Drawing the vertical line of the IoR cross.
+        cv2.line(image, (x1, center[1]), (x2, center[1]), color, thickness)
+
+        # Returning the image with the IoR cross.
+        return image
     
-    def check_early_stopping(self):
-        """
-            Function that checks if the episode should be terminated or not, whilst also retrieving the best bounding box.
-        """
-        # Retrieving the current IoU.
-        current_iou = iou(self.bbox, self.target_bbox)
-
-        # If the current IoU is greater than the best IoU, we update the best IoU and the best bounding box.
-        if current_iou > self.best_iou and self.env_mode == 0:
-            self.best_iou = current_iou
-            self.best_bbox = self.bbox
-
-        # Retrieving the action history.
-        action_history = self.actions_history
-
-        # Adding the columns of the action history to form a vector of action frequencies for the action history matrix.
-        action_frequencies = np.sum(action_history, axis=0)
-
-        # print("Action Frequencies: ", action_frequencies)
-
-        # Calculate the total sum of the action frequencies
-        total_sum = np.sum(action_frequencies)
-
-        # Retrieving the number of actions whose frequency is not zero.
-        num_actions = np.count_nonzero(action_frequencies)
-
-        # If the number of actions whose frequency is not zero is less than 3, we terminate the episode, with the reasoning that the agent is stuck in a local minimum (repetitive actions).
-        if num_actions < 3 and total_sum == NUMBER_OF_ACTIONS:
-            # print("Episode is terminated due to repetitive actions.")
-            self.terminated = True
-        pass
-
-
-
     def step(self, action):
         """
             Function that performs an action on the environment.
@@ -812,32 +917,33 @@ class DetectionEnv(Env):
         self.current_action = action
         
         # Checking the action type and applying the action to the image (transform action).
-        # if action < 8:
+        if action < 8 and (self.step_count % self.trigger_steps != 0 or self.step_count == 0):
         # Retrieving the previous state
-        previous_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
+            previous_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
 
-        # Applying the action to the image.
-        self.bbox = self.transform_action(action)
+            # Applying the action to the image.
+            self.bbox = self.transform_action(action)
 
-        # Retrieving the current state.
-        current_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
+            # Retrieving the current state.
+            current_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
 
-        # Calculating the reward.
-        reward = self.calculate_reward(current_state, previous_state, self.target_bbox)
-        # else:
-        #     # Retrieving the current state.
-        #     current_state = self.bbox
+            # Calculating the reward.
+            reward = self.calculate_reward(current_state, previous_state, self.target_bbox)
+        else:
+            # Retrieving the current state.
+            current_state = self.bbox
 
-        #     # Calculating the reward.
-        #     reward = self.calculate_trigger_reward(current_state, self.target_bbox)
+            # Calculating the reward.
+            reward = self.calculate_trigger_reward(current_state, self.target_bbox)
 
-        #     # Setting the episode to be terminated.
-        #     self.terminated = True
+            self.restart_and_change_state()
+            # Setting the episode to be terminated.
+            # self.terminated = True
 
         # Calculating the cumulative reward.
         self.cumulative_reward += reward
 
-        self.check_early_stopping()
+        # self.check_early_stopping()
 
         # Incrementing the step count.
         self.step_count += 1
@@ -851,8 +957,8 @@ class DetectionEnv(Env):
         # If the episode is finished, we increment the number of episodes.
         if self.terminated or self.truncated:
             self.num_episodes += 1
-            if self.env_mode == 0: # Training mode
-                self.bbox = self.best_bbox # Set the bounding box to the best bounding box (Model checkpoint)
+            # if self.env_mode == 0: # Training mode
+            #     self.bbox = self.best_bbox # Set the bounding box to the best bounding box (Model checkpoint)
 
         if self.is_render:
             self.render(self.render_mode)
@@ -894,11 +1000,14 @@ class DetectionEnv(Env):
         # If the action is 7, return the name of the action.
         elif action == 7:
             return "Make taller"
+        # If the action is 8, return the name of the action.
+        elif action == 8:
+            return "Trigger"
         else:
             return "N/A"
         pass
 
-    def _render_frame(self, mode='human', close=False, alpha=0.3, text_display=True):
+    def _render_frame(self, mode='human', close=False, alpha=0.2, text_display=True):
         # Retrieving bounding box coordinates.
         x1, y1, x2, y2 = self.bbox  # Make sure self.bbox is defined in your environment
 
@@ -906,16 +1015,16 @@ class DetectionEnv(Env):
         canvas = pygame.Surface((self.window_size[0], self.window_size[1]))
 
         # Checking the mode of rendering.
-        if mode == 'human' or mode == 'sara' or mode == 'bbox':
+        if mode == 'human' or mode == 'trigger_image' or mode == 'bbox':
             # Convert the NumPy array to a Pygame surface
             img = self.original_image.copy()
 
-            if mode == 'sara':
+            if mode == 'trigger_image':
                 img = self.image.copy()
 
             if mode == 'bbox':
                 img = np.zeros_like(self.original_image)
-                alpha = 0.7
+                alpha = 0.5
 
             # Creating target bounding box
             if self.env_mode == 0:
@@ -938,41 +1047,70 @@ class DetectionEnv(Env):
             # Creating a copy of the image
             image_copy = img.copy()
 
-            # Creating a filled rectangle for the bounding box
-            cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
+            if not (self.truncated or self.terminated):
+                # Creating a filled rectangle for the current bounding box
+                cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
 
-            # Blending the image with the rectangle using cv2.addWeighted
-            img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
+                # Blending the image with the rectangle using cv2.addWeighted
+                img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
 
-            # Adding a rectangle outline to the image
-            cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
+                # Adding a rectangle outline to the image
+                cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
+
+            # Iterating through the classification dictionary (for bounding boxes)
+            for label_idx in range(len(self.classification_dictionary['label'])):
+                # Retrieving the label and the confidence and the bounding box
+                label = self.classification_dictionary['label'][label_idx]
+                label_confidence = self.classification_dictionary['confidence'][label_idx]
+                predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+                # Extracting coordinates
+                x1, y1, x2, y2 = predicted_bbox
+
+                # Drawing the bounding box on the image (Creating a filled rectangle for the bounding box)
+                cv2.rectangle(img, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, cv2.FILLED)
+
+                # Blending the image with the rectangle using cv2.addWeighted
+                img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
+
+                # Adding a rectangle outline to the image
+                cv2.rectangle(img, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, 3)
 
             # Adding the label to the image
-            if text_display and self.label is not None:
-                # Setting the font and the font scale
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 1.2
-                
-                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
+            # if text_display and self.classification_dictionary['label'] and (self.truncated or self.terminated):
+            #     # Setting the font and the font scale
+            #     font = cv2.FONT_HERSHEY_SIMPLEX
+            #     font_scale = 1.2
 
-                # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
-                (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+            #     # Iterating through the classification dictionary (for text)
+            #     for label_idx in range(len(self.classification_dictionary['label'])):
+            #         # Retrieving the label and the confidence and the bounding box
+            #         label = self.classification_dictionary['label'][label_idx]
+            #         label_confidence = self.classification_dictionary['confidence'][label_idx]
+            #         predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+            #         # Extracting coordinates
+            #         x1, y1, x2, y2 = predicted_bbox
 
-                # Ensuring that the label doesn't go out of bounds
-                if y1 - label_height - baseline < 0:
-                    y1 = label_height + baseline
-                if x1 + label_width > img.shape[1]:
-                    x1 = img.shape[1] - label_width
-                if y1 + label_height + baseline > img.shape[0]:
-                    y1 = img.shape[0] - label_height - baseline
-                if x1 < 0:
-                    x1 = 0
+            #         # Creating the label text
+            #         text = str(label.capitalize()) + '  ' + str(round(label_confidence, 2))
 
-                # Creating a filled rectangle for the label background
-                cv2.rectangle(img, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+            #         # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+            #         (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
 
-                # Adding the label text to the image
-                cv2.putText(img, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+            #         # Ensuring that the label doesn't go out of bounds
+            #         if y1 - label_height - baseline < 0:
+            #             y1 = label_height + baseline
+            #         if x1 + label_width > img.shape[1]:
+            #             x1 = img.shape[1] - label_width
+            #         if y1 + label_height + baseline > img.shape[0]:
+            #             y1 = img.shape[0] - label_height - baseline
+            #         if x1 < 0:
+            #             x1 = 0
+
+            #         # Creating a filled rectangle for the label background
+            #         cv2.rectangle(img, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+
+            #         # Adding the label text to the image
+            #         cv2.putText(img, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
 
             image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
 
@@ -1069,7 +1207,7 @@ class DetectionEnv(Env):
         mode = self.render_mode
         return self._render_frame(mode, close)
     
-    def display(self, mode='image', do_display=False, text_display=True, alpha=0.4, color=(0, 255, 0)):
+    def display(self, mode='image', do_display=False, text_display=True, alpha=0.3, color=(0, 255, 0)):
         """
             Function that renders the environment.
 
@@ -1087,50 +1225,91 @@ class DetectionEnv(Env):
         x1, y1, x2, y2 = self.bbox
 
         # Checking the mode of rendering.
-        if mode == 'image':
+        if mode == 'image' or mode == 'trigger_image' or mode == 'detection':
             # Creating a copy of the original image.
             image_copy = self.original_image.copy()
 
-            # Creating a filled rectangle for the bounding box
-            cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
+            # Checking the mode of rendering.
+            if mode == 'trigger_image':
+                image_copy = self.image.copy()
 
-            # Blending the image with the rectangle using cv2.addWeighted
-            image = cv2.addWeighted(self.image, 1 - alpha, image_copy, alpha, 0)
+            if mode == 'detection':
+                alpha = 0.5
 
-            # Adding a rectangle outline to the image
-            cv2.rectangle(image, (x1, y1), (x2, y2), self.color, 3)
+            if not (self.truncated or self.terminated):
+                # Creating a filled rectangle for the bounding box
+                cv2.rectangle(image_copy, (x1, y1), (x2, y2), self.color, cv2.FILLED)
 
+                # Blending the image with the rectangle using cv2.addWeighted
+                image = cv2.addWeighted(self.image.copy(), 1 - alpha, image_copy, alpha, 0)
+
+                # Adding a rectangle outline to the image
+                cv2.rectangle(image, (x1, y1), (x2, y2), self.color, 3)
+            else:
+                image = image_copy
+
+            # Iterating through the classification dictionary (for bounding boxes)
+            for label_idx in range(len(self.classification_dictionary['label'])):
+                # Retrieving the label and the confidence and the bounding box
+                label = self.classification_dictionary['label'][label_idx]
+                label_confidence = self.classification_dictionary['confidence'][label_idx]
+                predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+                # Extracting coordinates
+                x1, y1, x2, y2 = predicted_bbox
+
+                image_copy = image.copy()
+
+                # Drawing the bounding box on the image (Creating a filled rectangle for the bounding box)
+                cv2.rectangle(image, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, cv2.FILLED)
+
+                # Blending the image with the rectangle using cv2.addWeighted
+                image = cv2.addWeighted(image, 1 - alpha, image_copy, alpha, 0)
+
+                # Adding a rectangle outline to the image
+                cv2.rectangle(image, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, 3)
+    
             # Adding the label to the image
-            if text_display and self.label is not None:
+            if text_display and self.classification_dictionary['label'] and mode == 'detection':
                 # Setting the font and the font scale
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 font_scale = 1.2
-                
-                text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
 
-                # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
-                (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+                # Iterating through the classification dictionary (for text)
+                for label_idx in range(len(self.classification_dictionary['label'])):
+                    # Retrieving the label and the confidence and the bounding box
+                    label = self.classification_dictionary['label'][label_idx]
+                    label_confidence = self.classification_dictionary['confidence'][label_idx]
+                    predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+                    # Extracting coordinates
+                    x1, y1, x2, y2 = predicted_bbox
 
-                # Ensuring that the label doesn't go out of bounds
-                if y1 - label_height - baseline < 0:
-                    y1 = label_height + baseline
-                if x1 + label_width > image.shape[1]:
-                    x1 = image.shape[1] - label_width
-                if y1 + label_height + baseline > image.shape[0]:
-                    y1 = image.shape[0] - label_height - baseline
-                if x1 < 0:
-                    x1 = 0
+                    # Creating the label text
+                    text = str(label.capitalize()) + '  ' + str(round(label_confidence, 2))
 
-                # Creating a filled rectangle for the label background
-                cv2.rectangle(image, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+                    # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+                    (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
 
-                # Adding the label text to the image
-                cv2.putText(image, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+                    # Ensuring that the label doesn't go out of bounds
+                    if y1 - label_height - baseline < 0:
+                        y1 = label_height + baseline
+                    if x1 + label_width > image.shape[1]:
+                        x1 = image.shape[1] - label_width
+                    if y1 + label_height + baseline > image.shape[0]:
+                        y1 = image.shape[0] - label_height - baseline
+                    if x1 < 0:
+                        x1 = 0
+
+                    # Creating a filled rectangle for the label background
+                    cv2.rectangle(image, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+
+                    # Adding the label text to the image
+                    cv2.putText(image, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
 
             # Plotting the image.
-            if do_display:
+            if do_display and mode != 'detection':
                 self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)))
-
+            else:
+                self.plot_img(image, title='Object Detection',figure_size=(10, 7))
             # Returning the image.
             return image
         elif mode == 'bbox':
@@ -1163,7 +1342,7 @@ class DetectionEnv(Env):
             # Returning the image.
             return heatmap
         
-    def segment(self, display_mode="mask", do_display=False, text_display=True, alpha=0.7, color=(0, 255, 0)):
+    def segment(self, display_mode="mask", do_display=False, do_save=False, save_path=None, text_display=True, alpha=0.7, color=(0, 255, 0)):
         """
             Function that segments the object in the bounding box.
 
@@ -1176,132 +1355,180 @@ class DetectionEnv(Env):
             Output:
                 - Segment Mask
         """
-        # Retrieving bounding box coordinates.
-        x1, y1, x2, y2 = self.bbox
+        # Iterating through the classification dictionary
+        for label_idx in range(len(self.classification_dictionary['label'])):
+            # Extracting the information from the classification dictionary
+            label = self.classification_dictionary['label'][label_idx]
+            label_confidence = self.classification_dictionary['confidence'][label_idx]
+            predicted_bbox = self.classification_dictionary['bbox'][label_idx]
 
-        offset = 10
-        # Going a bit outside the bounding box
-        x1, y1, x2, y2 = x1 - offset, y1 - offset, x2 + offset, y2 + offset
+            # Retrieving bounding box coordinates.
+            x1, y1, x2, y2 = predicted_bbox
 
-        # Creating a black 3-channel mask image.
-        mask = np.zeros_like(self.original_image)
+            offset = 0
+            # Going a bit outside the bounding box
+            x1, y1, x2, y2 = x1 - offset, y1 - offset, x2 + offset, y2 + offset
 
-        # Changing to 1-channel mask image.
-        mask = cv2.cvtColor(mask, cv2.COLOR_RGB2GRAY)
+            # Creating a black 3-channel mask image.
+            mask = np.zeros_like(self.original_image)
 
-        # Extracting the object from the mask.
-        bbox_object = self.original_image[y1:y2, x1:x2]
-        
-        # From the bbox_object, we extract the mask via Canny Edge Detection.
-        edges = cv2.Canny(bbox_object, 100, 200)
-        self.plot_img(edges, title='Canny Edge Detection')
-        # Creating a copy of the mask.
-        mask_copy = mask.copy()
+            # Changing to 1-channel mask image.
+            mask = cv2.cvtColor(mask, cv2.COLOR_RGB2GRAY)
 
-        # Mapping the edges to the mask.
-        mask_copy[y1:y2, x1:x2] = edges
+            # Extracting the object from the mask.
+            bbox_object = self.original_image[y1:y2, x1:x2]
+            
+            # From the bbox_object, we extract the mask via Canny Edge Detection.
+            edges = cv2.Canny(bbox_object, 100, 200)
+            # self.plot_img(edges, title='Canny Edge Detection')
+            # Creating a copy of the mask.
+            mask_copy = mask.copy()
 
-        # Retrieving the contours of the mask.
-        contours = ah.single_object_polygon_approximation(mask_copy, epsilon=0.005, do_cvt=False)
+            # Mapping the edges to the mask.
+            mask_copy[y1:y2, x1:x2] = edges
 
-        # Draw the single polygon onto the mask and fill it
-        cv2.fillPoly(mask, pts=contours, color=(255, 255, 255))
- 
-        # Define a larger structuring element
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
+            # Retrieving the contours of the mask.
+            contours = ah.single_object_polygon_approximation(mask_copy, epsilon=0.005, do_cvt=False)
 
-        # Apply the closing operation multiple times
-        for _ in range(100):  # Change this number to apply the operation more or less times
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        
-        # Filling the remaining holes in the mask with the closing operation but different kernel
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))
-        for _ in range(4):
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            # Draw the single polygon onto the mask and fill it
+            cv2.fillPoly(mask, pts=contours, color=(255, 255, 255))
+    
+            # Define a larger structuring element
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 17))
 
-        # Creating a filled polygon annotation for the object mask on a copy of the original image.
-        image_copy = self.original_image.copy()       
+            # Apply the closing operation multiple times
+            for _ in range(100):  # Change this number to apply the operation more or less times
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            
+            # Filling the remaining holes in the mask with the closing operation but different kernel
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))
+            for _ in range(4):
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-        # SaRa algorithm
-        sara.reset()
-        # Calculating Itti Saliency Map
-        saliency_map_itti = sara.return_saliency(image_copy.copy(), generator=generator)
-        saliency_map_rgb_itti = cv2.cvtColor(saliency_map_itti, cv2.COLOR_BGR2RGB)
-        saliency_map_gray_itti = cv2.cvtColor(saliency_map_rgb_itti, cv2.COLOR_RGB2GRAY)
+            # Creating a filled polygon annotation for the object mask on a copy of the original image.
+            image_copy = self.original_image.copy()       
 
-        # Thresholding the saliency map using Otsu's method
-        ret, thresh_itti = cv2.threshold(saliency_map_gray_itti, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            # SaRa algorithm
+            sara.reset()
+            # Calculating Itti Saliency Map
+            saliency_map_itti = sara.return_saliency(image_copy.copy(), generator=generator)
+            saliency_map_rgb_itti = cv2.cvtColor(saliency_map_itti, cv2.COLOR_BGR2RGB)
+            saliency_map_gray_itti = cv2.cvtColor(saliency_map_rgb_itti, cv2.COLOR_RGB2GRAY)
 
-        # Performing morphological operations on the thresholded image
-        kernel = np.ones((5,5), np.uint8)
-        dilated = cv2.dilate(thresh_itti, kernel, iterations=2)
-        erosion = cv2.erode(dilated, kernel, iterations=2)
+            # Thresholding the saliency map using Otsu's method
+            ret, thresh_itti = cv2.threshold(saliency_map_gray_itti, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Applying the saliency map to the mask, to remove holes in the mask
-        mask = cv2.bitwise_and(erosion, mask)#, mask=erosion)
+            # Performing morphological operations on the thresholded image
+            kernel = np.ones((5,5), np.uint8)
+            dilated = cv2.dilate(thresh_itti, kernel, iterations=2)
+            erosion = cv2.erode(dilated, kernel, iterations=2)
 
-        # Apply Gaussian blur to smooth the mask
-        mask = cv2.GaussianBlur(mask, (3, 3), 0)
+            # Applying the saliency map to the mask, to remove holes in the mask
+            mask = cv2.bitwise_and(erosion, mask)#, mask=erosion)
+
+            # Apply Gaussian blur to smooth the mask
+            mask = cv2.GaussianBlur(mask, (3, 3), 0)
+
+            # Appending name (label with percentage confidence), mask and bounding box to the segmentation dictionary
+            self.segmentation_dictionary['names'].append(label+" "+str(round(label_confidence*100, 2))+ "%")
+            self.segmentation_dictionary['masks'].append(mask)
+            self.segmentation_dictionary['bboxes'].append(predicted_bbox)
+            self.segmentation_dictionary['labels'].append(label)
 
         # Plotting the image.
         if do_display:
             if display_mode == "mask":
-                self.plot_img(mask, title='Segmented Object Mask')
-                self.plot_img(erosion, title='Thresholded Itti Saliency Map')
+                # Retrieving the number of objects
+                num_objects = len(self.segmentation_dictionary['masks'])
+
+                max_cols = 4
+
+                # Calculating the rows and columns via the number of objects and modulus on max_cols
+                rows = int(num_objects / max_cols) + 1 if num_objects % max_cols != 0 else int(num_objects / max_cols)
+                cols = max_cols if num_objects > max_cols else num_objects
+
+                # Creating dictionary for the masks
+                masks = {self.segmentation_dictionary['names'][i]: self.segmentation_dictionary['masks'][i] for i in range(num_objects)}
+
+                # Plotting the masks
+                self.plot_multiple_imgs(masks, rows, cols, suptitle='Instance Segmentation Masks')
 
             elif display_mode == "image":
                 # Creating a filled polygon annotation for the object mask on a copy of the original image.
                 image_copy = self.original_image.copy()
 
-                # Calculating contours of the mask
-                contours_mask, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+                # Iterating through the segmentation dictionary
+                for i in range(len(self.segmentation_dictionary['masks'])):
+                    # Extracting the mask and the bounding box
+                    mask = self.segmentation_dictionary['masks'][i]
+                    bbox = self.segmentation_dictionary['bboxes'][i]
+                    name = self.segmentation_dictionary['names'][i]
 
-                cv2.fillPoly(image_copy, pts=contours_mask, color=self.color)
+                    current_color = self.generate_random_color()
 
-                # Blending the image with the rectangle using cv2.addWeighted
-                image = cv2.addWeighted(self.image, 1 - alpha, image_copy, alpha, 0)
+                    x1, y1, x2, y2 = bbox
 
-                # Adding a rectangle outline to the image
-                cv2.rectangle(image, (x1, y1), (x2, y2), self.color, 3)
+                    # Calculating contours of the mask
+                    contours_mask, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-                if text_display and self.label is not None:
-                    # Setting the font and the font scale
-                    font = cv2.FONT_HERSHEY_SIMPLEX
-                    font_scale = 1.2
-                    
-                    text = str(self.label.capitalize()) + '  ' + str(round(self.label_confidence, 2))
+                    # Making a copy of the original image
+                    original_image = image_copy.copy()
 
-                    # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
-                    (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+                    # Fill a polygon on the image copy
+                    cv2.fillPoly(image_copy, pts=contours_mask, color=current_color)
 
-                    # Ensuring that the label doesn't go out of bounds
-                    if y1 - label_height - baseline < 0:
-                        y1 = label_height + baseline
-                    if x1 + label_width > image.shape[1]:
-                        x1 = image.shape[1] - label_width
-                    if y1 + label_height + baseline > image.shape[0]:
-                        y1 = image.shape[0] - label_height - baseline
-                    if x1 < 0:
-                        x1 = 0
+                    # Blend the original image with the image copy
+                    image_copy = cv2.addWeighted(original_image, 1 - alpha, image_copy, alpha, 0)
 
-                    # Creating a filled rectangle for the label background
-                    cv2.rectangle(image, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+                    # Draw a rectangle on the blended image
+                    cv2.rectangle(image_copy, (x1, y1), (x2, y2), current_color, 3)
 
-                    # Adding the label text to the image
-                    cv2.putText(image, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+                    if text_display:
+                        # Setting the font and the font scale
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 1.2
+                        
+                        text = name
 
-                self.plot_img(image, title='Instance Segmentation')
+                        # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+                        (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
 
-        # Returning the image mask.
-        return mask
+                        # Ensuring that the label doesn't go out of bounds
+                        if y1 - label_height - baseline < 0:
+                            y1 = label_height + baseline
+                        if x1 + label_width > image_copy.shape[1]:
+                            x1 = image_copy.shape[1] - label_width
+                        if y1 + label_height + baseline > image_copy.shape[0]:
+                            y1 = image_copy.shape[0] - label_height - baseline
+                        if x1 < 0:
+                            x1 = 0
+
+                        # Creating a filled rectangle for the label background
+                        cv2.rectangle(image_copy, (x1, y1 - label_height - baseline), (x1 + label_width, y1), current_color, -1)
+
+                        # Adding the label text to the image
+                        cv2.putText(image_copy, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+
+                self.plot_img(image_copy, title='Instance Segmentation', figure_size=(10, 7))
+
+                # Saving the image
+                if do_save:
+                    # If the save path is None, then create a new directory
+                    if save_path is None:
+                        os.makedirs(save_path, exist_ok=True)
+                        save_path = os.path.join(save_path, "Segmentation" + str(self.step_count) + str(self.num_episodes) + ".png")
+
+                    # Saving the image
+                    cv2.imwrite(save_path, image_copy)
+
+        # Returning the segmentation dictionary
+        return self.segmentation_dictionary
     
-    def annotate(self, image, id, title, project_name, save_dir, annotation_format="coco", do_display=False, do_save=False, do_print=True, annotation_color=(255, 0, 255), epsilon=0.005, configuration=coco.POLY_APPROX, object_configuration=coco.SINGLE_OBJ, do_cvt=True):
-        # Setting the category as the label.
-        category = self.label
+    def annotate(self, image, id, title, project_name, save_dir, category="No category", annotation_format="coco", do_display=False, do_save=False, do_print=True, annotation_color=(255, 0, 255), epsilon=0.005, configuration=coco.POLY_APPROX, object_configuration=coco.SINGLE_OBJ, do_cvt=True):
+        """
+            Function which utilise the Mask to Annotation software to annotate an object mask in an image.
 
-        # Setting the annotation color.
-        annotation_color = self.color
-
+        """
         # Checking the annotation format.
         if annotation_format == "coco":
             coco.annotate((id, title, image, project_name, category, save_dir), do_display=do_display, do_save=do_save, do_print=do_print, annotation_color=annotation_color, epsilon=epsilon, configuration=configuration, object_configuration=object_configuration, do_cvt=do_cvt)
@@ -1312,7 +1539,7 @@ class DetectionEnv(Env):
         else:
             raise Exception("Unknown Annotation Format.")
         
-    def plot_img(self, image, title=None):
+    def plot_img(self, image, title=None, figure_size=(10,7)):
         """
             Function that plots the image.
 
@@ -1320,11 +1547,53 @@ class DetectionEnv(Env):
                 - Image to plot
         """
         # Plotting the image.
-        plt.figure(figsize=(10, 7))
-        plt.imshow(image, cmap='gray')
+        plt.figure(figsize=figure_size)
+        plt.imshow(image, cmap='Blues')
         plt.axis('off')
         if title is not None:
-            plt.title(title, fontsize=14)
+            plt.title(title, fontsize=20)
+        plt.show()
+       
+    def plot_multiple_imgs(self, images, rows=1, cols=1, suptitle="Instance Segmentation Masks", figure_size=(20, 10)):
+        """
+            Function that plots multiple images.
+
+            Input:
+                - Images to plot
+                - Number of rows
+                - Number of columns
+        """
+        # Function takes parameters number of rows and columns
+        # Creating a Grid, depending on the number of rows and columns
+        fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=figure_size) 
+        # Flattening the axes and taking the number of unwanted plots
+        axes = axes.flatten()
+        unwantedPlots=len(images)
+        # Looping through all the images
+        for i, (imageName, image) in enumerate(images.items()):
+            # Checking whether exceeded list and setting the number of unwantedPlots starting value
+            if i >= rows * cols:
+                unwantedPlots=i
+                break
+            
+            # Calculating row and column
+            row = i // cols 
+            col = i % cols
+            
+            # Error checking for axes keys
+            if row < rows and col < cols:
+                axes[i].imshow(image, interpolation='nearest', cmap='Blues_r') # Showing the image
+                axes[i].set_title("Mask: " + imageName, fontsize=18) # Setting the title
+                axes[i].axis('off') # Removing the axes
+        
+        # Deleting the extra plots
+        for i in range(unwantedPlots, len(axes)):
+            fig.delaxes(axes[i])
+
+        # Adjusting the layout
+        fig.tight_layout()
+
+        # Showing plot
         plt.show()
         
     def close(self):
@@ -1441,7 +1710,7 @@ class DetectionEnv(Env):
         # Finding the key which corresponds to the current class image index
         img_name = list(extracted_imgs_per_class.keys())[self.class_image_index]
 
-        self.image = extracted_imgs_per_class[img_name][0][0]
+        self.image = extracted_imgs_per_class[img_name][self.class_image_index][0]
 
         # Converting image to cv2 format
         self.image = cv2.cvtColor(np.array(self.image), cv2.COLOR_RGB2BGR)
@@ -1449,6 +1718,10 @@ class DetectionEnv(Env):
 
         self.height = self.image.shape[0]
         self.width = self.image.shape[1]
+
+        # Extracting all the ground truth bounding boxes and labels
+        self.current_gt_bboxes = extracted_imgs_per_class[img_name][0][1]
+        print("Ground Truth Bounding Boxes: ", self.ground_truth_bboxes)
 
         # Extracting the first object
         first_object = extracted_imgs_per_class[img_name][0][1][0]
@@ -1471,30 +1744,34 @@ class DetectionEnv(Env):
         """
         pass
 
-    # def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
+    # def check_early_stopping(self):
     #     """
-    #         Calculating the reward.
-
-    #         Input:
-    #             - Current state
-    #             - Target bounding box
-    #             - Reward function
-
-    #         Output:
-    #             - Reward
+    #         Function that checks if the episode should be terminated or not, whilst also retrieving the best bounding box.
     #     """
-    #     # Calculating the IoU between the current state and the target bounding box.
-    #     iou_current = reward_function(current_state, target_bbox)
+    #     # Retrieving the current IoU.
+    #     current_iou = iou(self.bbox, self.target_bbox)
 
-    #     # Calculating the reward.
-    #     reward = iou_current
+    #     # If the current IoU is greater than the best IoU, we update the best IoU and the best bounding box.
+    #     if current_iou > self.best_iou and self.env_mode == 0:
+    #         self.best_iou = current_iou
+    #         self.best_bbox = self.bbox
 
-    #     # Updating the threshold.
-    #     # self.update_threshold()
+    #     # Retrieving the action history.
+    #     action_history = self.actions_history
 
-    #     # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
-    #     if reward >= self.threshold:
-    #         return self.nu*abs(reward)
-        
-    #     # Returning -1*trigger reward.
-    #     return -1*self.nu#/abs(reward)
+    #     # Adding the columns of the action history to form a vector of action frequencies for the action history matrix.
+    #     action_frequencies = np.sum(action_history, axis=0)
+
+    #     # print("Action Frequencies: ", action_frequencies)
+
+    #     # Calculate the total sum of the action frequencies
+    #     total_sum = np.sum(action_frequencies)
+
+    #     # Retrieving the number of actions whose frequency is not zero.
+    #     num_actions = np.count_nonzero(action_frequencies)
+
+    #     # If the number of actions whose frequency is not zero is less than 3, we terminate the episode, with the reasoning that the agent is stuck in a local minimum (repetitive actions).
+    #     if num_actions < 3 and total_sum == NUMBER_OF_ACTIONS:
+    #         # print("Episode is terminated due to repetitive actions.")
+    #         self.terminated = True
+    #     pass

@@ -162,3 +162,7 @@ PascalVOC2007Dataset/
 *.avi
 # *.mp4
 output_video.mp4
+
+# model files
+Experiments/RL/models/
+Experiments/RL/models/Normal DQN/optimizer.pth
