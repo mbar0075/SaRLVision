@@ -15,6 +15,7 @@ import colorsys
 import pygame
 import os
 import sys
+import json
 
 # Importing SaRa (For now only being used for segmentation, but still need to implement it in the initial bounding box prediction)
 import SaRa.saraRC1 as sara
@@ -43,7 +44,7 @@ CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
 REWARD_FUNC = iou
 ENV_MODE = 0 # 0 for training, 1 for testing
-USE_DATASET = None # Whether to use the dataset or not, or to use the image directly
+USE_DATASET = None # Whether to use the dataset or not, or to use the image directly (dataset path)
 DATASET_YEAR = '2007' # Pascal VOC Dataset Year
 DATASET_IMAGE_SET = 'train'
 
@@ -96,15 +97,38 @@ class DetectionEnv(Env):
 
         # Variable to hold the number of epochs
         self.epochs = 0
-        self.class_index = 0
+        # self.class_index = 0
         self.classes = []
         self.current_class = None
         self.class_image_index = 0
         self.total_images = 0
 
+        # For environment mode
+        self.env_mode = ENV_MODE
+
         if self.use_dataset is not None:
-            self.dataset_image_index = 0
-            self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset, year=self.dataset_year, image_set=self.dataset_image_set)
+            if not self.dataset_year != '2007+2012':
+                # self.dataset_image_index = 0
+                self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset, year=self.dataset_year, image_set=self.dataset_image_set)
+            else:
+                self.dataset = self.load_training_dataset(path=self.use_dataset, image_set=self.dataset_image_set)
+
+            # Extracting the current class
+            if 'current_class' in env_config:
+                self.current_class = env_config['current_class']
+                if self.current_class not in self.classes:
+                    raise ValueError('Current class not in the dataset, possible classes are: ' + str(self.classes))
+                del env_config['current_class']
+            else:
+                # Extracting the first class
+                self.current_class = self.classes[0]
+
+            print('\033[37m' + "Current Class: " + self.current_class + '\033[0m')
+
+            # For Evaluation
+            if self.env_mode == 1: # Testing mode
+                self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': [], 'confidences': []}
+
             self.extract()
         else:
             # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
@@ -209,7 +233,7 @@ class DetectionEnv(Env):
             self.threshold = THRESHOLD
 
         # Classification part
-        self.classification_dictionary = {'label': [], 'confidence': [], 'bbox': []}
+        self.classification_dictionary = {'label': [], 'confidence': [], 'bbox': [], 'color': []}
 
         if 'classifier' in env_config:
             self.classifier = env_config['classifier']
@@ -252,11 +276,8 @@ class DetectionEnv(Env):
         # For recording the current action
         self.current_action = None
 
-        # For environment mode
-        self.env_mode = ENV_MODE
-
         # For segmentation
-        self.segmentation_dictionary = {'bboxes': [], 'masks': [], 'names': [], 'labels': []}
+        self.segmentation_dictionary = {'bboxes': [], 'masks': [], 'names': [], 'labels': [], 'colors': []}
 
         # For model (bounding box) checkpoint
         # self.best_iou = 0
@@ -268,12 +289,18 @@ class DetectionEnv(Env):
             Function that sets the environment mode to training.
         """
         self.env_mode = 0
+        pass
 
     def test(self):
         """
             Function that sets the environment mode to testing.
         """
         self.env_mode = 1
+
+        # For Evaluation
+        if self.use_dataset is not None:
+            self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': [], 'confidences': []}
+        pass
 
     def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=REWARD_FUNC):
         """
@@ -720,8 +747,8 @@ class DetectionEnv(Env):
         self.transform = transform_input(self.image, self.target_size)
 
         # Classification part
-        self.classification_dictionary = {'label': [], 'confidence': [], 'bbox': []}
-        
+        self.classification_dictionary = {'label': [], 'confidence': [], 'bbox': [], 'color': []}
+   
         if 'classifier' in env_config:
             self.classifier = env_config['classifier']
             del env_config['classifier']
@@ -765,7 +792,7 @@ class DetectionEnv(Env):
         # self.best_bbox = self.bbox
 
         # For segmentation
-        self.segmentation_dictionary = {'bboxes': [], 'masks': [], 'names': [], 'labels': []}
+        self.segmentation_dictionary = {'bboxes': [], 'masks': [], 'names': [], 'labels': [], 'colors': []}
 
         # Returning the observation space.
         return self.get_state(), self.get_info()
@@ -798,10 +825,11 @@ class DetectionEnv(Env):
         # Retrieving the Label and the confidence of the image.
         label = decode_predictions(preds, top=1)[0][0]
 
-        # Storing the label and the confidence and the bounding box in the classification dictionary.
+        # Storing the label, the cofidence and the bounding box of the image in the classification dictionary.
         self.classification_dictionary['label'].append(label[1])
         self.classification_dictionary['confidence'].append(label[2])
         self.classification_dictionary['bbox'].append(self.bbox)
+        self.classification_dictionary['color'].append(self.generate_random_color())
         pass
     
     def predict(self, do_display=True, do_save=False, save_path=None):
@@ -846,14 +874,35 @@ class DetectionEnv(Env):
         self.get_label()
 
         # Resetting bounding box to start from either of the corners and instead of having the whole image size, it will have a 75% of the image size
-        if self.no_of_triggers % 4 == 0:
-            self.bbox = [0, 0, int(self.width*0.75), int(self.height*0.75)]
-        elif self.no_of_triggers % 4 == 1:
-            self.bbox = [int(self.width*0.25), 0, self.width, int(self.height*0.75)]
-        elif self.no_of_triggers % 4 == 2:
-            self.bbox = [0, int(self.height*0.25), int(self.width*0.75), self.height]
-        elif self.no_of_triggers % 4 == 3:
-            self.bbox = [int(self.width*0.25), int(self.height*0.25), self.width, self.height]
+        if self.env_mode == 1: # Testing mode
+            if self.no_of_triggers % 4 == 0:
+                self.bbox = [0, 0, int(self.width*0.75), int(self.height*0.75)]
+            elif self.no_of_triggers % 4 == 1:
+                self.bbox = [int(self.width*0.25), 0, self.width, int(self.height*0.75)]
+            elif self.no_of_triggers % 4 == 2:
+                self.bbox = [0, int(self.height*0.25), int(self.width*0.75), self.height]
+            elif self.no_of_triggers % 4 == 3:
+                self.bbox = [int(self.width*0.25), int(self.height*0.25), self.width, self.height]
+        else:
+            """
+            Since the environment is in training mode, and a number of ground truth bounding boxes are provided, we set the initial bounding box 
+            closest to the current ground truth bounding box. This is done such that the model can learn to predict the bounding box closest to the
+            ground truth bounding box.
+            """
+            bbox1 = [0, 0, int(self.width*0.75), int(self.height*0.75)]
+            bbox2 = [int(self.width*0.25), 0, self.width, int(self.height*0.75)]
+            bbox3 = [0, int(self.height*0.25), int(self.width*0.75), self.height]
+            bbox4 = [int(self.width*0.25), int(self.height*0.25), self.width, self.height]
+            start_boxes = [bbox1, bbox2, bbox3, bbox4]
+
+            # Retrieving the best IoU from the four bounding boxes and setting the bounding box to the current initial bounding box
+            ious = [iou(bbox1, self.target_bbox), iou(bbox2, self.target_bbox), iou(bbox3, self.target_bbox), iou(bbox4, self.target_bbox)]
+
+            # Finding the argmax of the IoUs
+            best_iou_index = np.argmax(ious)
+
+            # Setting the bounding box to the best bounding box
+            self.bbox = start_boxes[best_iou_index]
 
         # Incrementing the number of triggers
         self.no_of_triggers += 1
@@ -880,7 +929,7 @@ class DetectionEnv(Env):
         height = y2 - y1
 
         # Calculating the thickness of the IoR cross.
-        thickness = max(5, int(min(width, height) / 7))
+        thickness = max(5, int(min(width, height) / 20))
 
         # Calculating the center of the bounding box.
         center = ((x1 + x2) // 2, (y1 + y2) // 2)
@@ -1057,23 +1106,24 @@ class DetectionEnv(Env):
                 # Adding a rectangle outline to the image
                 cv2.rectangle(img, (x1, y1), (x2, y2), self.color, 3)
 
-            # Iterating through the classification dictionary (for bounding boxes)
-            for label_idx in range(len(self.classification_dictionary['label'])):
-                # Retrieving the label and the confidence and the bounding box
-                label = self.classification_dictionary['label'][label_idx]
-                label_confidence = self.classification_dictionary['confidence'][label_idx]
-                predicted_bbox = self.classification_dictionary['bbox'][label_idx]
-                # Extracting coordinates
-                x1, y1, x2, y2 = predicted_bbox
+            if mode != 'trigger_image':
+                # Iterating through the classification dictionary (for bounding boxes)
+                for label_idx in range(len(self.classification_dictionary['label'])):
+                    # Retrieving the label and the confidence and the bounding box
+                    label = self.classification_dictionary['label'][label_idx]
+                    label_confidence = self.classification_dictionary['confidence'][label_idx]
+                    predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+                    # Extracting coordinates
+                    x1, y1, x2, y2 = predicted_bbox
 
-                # Drawing the bounding box on the image (Creating a filled rectangle for the bounding box)
-                cv2.rectangle(img, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, cv2.FILLED)
+                    # Drawing the bounding box on the image (Creating a filled rectangle for the bounding box)
+                    cv2.rectangle(img, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, cv2.FILLED)
 
-                # Blending the image with the rectangle using cv2.addWeighted
-                img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
+                    # Blending the image with the rectangle using cv2.addWeighted
+                    img = cv2.addWeighted(img, 1 - alpha, image_copy, alpha, 0)
 
-                # Adding a rectangle outline to the image
-                cv2.rectangle(img, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, 3)
+                    # Adding a rectangle outline to the image
+                    cv2.rectangle(img, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, 3)
 
             # Adding the label to the image
             # if text_display and self.classification_dictionary['label'] and (self.truncated or self.terminated):
@@ -1248,25 +1298,28 @@ class DetectionEnv(Env):
             else:
                 image = image_copy
 
-            # Iterating through the classification dictionary (for bounding boxes)
-            for label_idx in range(len(self.classification_dictionary['label'])):
-                # Retrieving the label and the confidence and the bounding box
-                label = self.classification_dictionary['label'][label_idx]
-                label_confidence = self.classification_dictionary['confidence'][label_idx]
-                predicted_bbox = self.classification_dictionary['bbox'][label_idx]
-                # Extracting coordinates
-                x1, y1, x2, y2 = predicted_bbox
+            if mode != 'trigger_image':
+                # Iterating through the classification dictionary (for bounding boxes)
+                for label_idx in range(len(self.classification_dictionary['label'])):
+                    # Retrieving the label and the confidence and the bounding box
+                    label = self.classification_dictionary['label'][label_idx]
+                    label_confidence = self.classification_dictionary['confidence'][label_idx]
+                    predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+                    predicted_bbox_color = self.classification_dictionary['color'][label_idx]
 
-                image_copy = image.copy()
+                    # Extracting coordinates
+                    x1, y1, x2, y2 = predicted_bbox
 
-                # Drawing the bounding box on the image (Creating a filled rectangle for the bounding box)
-                cv2.rectangle(image, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, cv2.FILLED)
+                    image_copy = image.copy()
 
-                # Blending the image with the rectangle using cv2.addWeighted
-                image = cv2.addWeighted(image, 1 - alpha, image_copy, alpha, 0)
+                    # Drawing the bounding box on the image (Creating a filled rectangle for the bounding box)
+                    cv2.rectangle(image, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), predicted_bbox_color, cv2.FILLED)
 
-                # Adding a rectangle outline to the image
-                cv2.rectangle(image, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, 3)
+                    # Blending the image with the rectangle using cv2.addWeighted
+                    image = cv2.addWeighted(image, 1 - alpha, image_copy, alpha, 0)
+
+                    # Adding a rectangle outline to the image
+                    cv2.rectangle(image, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), predicted_bbox_color, 3)
     
             # Adding the label to the image
             if text_display and self.classification_dictionary['label'] and mode == 'detection':
@@ -1280,6 +1333,8 @@ class DetectionEnv(Env):
                     label = self.classification_dictionary['label'][label_idx]
                     label_confidence = self.classification_dictionary['confidence'][label_idx]
                     predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+                    predicted_bbox_color = self.classification_dictionary['color'][label_idx]
+
                     # Extracting coordinates
                     x1, y1, x2, y2 = predicted_bbox
 
@@ -1300,7 +1355,7 @@ class DetectionEnv(Env):
                         x1 = 0
 
                     # Creating a filled rectangle for the label background
-                    cv2.rectangle(image, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+                    cv2.rectangle(image, (x1, y1 - label_height - baseline), (x1 + label_width, y1), predicted_bbox_color, -1)
 
                     # Adding the label text to the image
                     cv2.putText(image, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
@@ -1355,12 +1410,16 @@ class DetectionEnv(Env):
             Output:
                 - Segment Mask
         """
+        # Resetting the segmentation dictionary
+        self.segmentation_dictionary = {'names': [], 'masks': [], 'bboxes': [], 'labels': [], 'colors': []}
+
         # Iterating through the classification dictionary
         for label_idx in range(len(self.classification_dictionary['label'])):
             # Extracting the information from the classification dictionary
             label = self.classification_dictionary['label'][label_idx]
             label_confidence = self.classification_dictionary['confidence'][label_idx]
             predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+            predicted_bbox_color = self.classification_dictionary['color'][label_idx]
 
             # Retrieving bounding box coordinates.
             x1, y1, x2, y2 = predicted_bbox
@@ -1434,6 +1493,7 @@ class DetectionEnv(Env):
             self.segmentation_dictionary['masks'].append(mask)
             self.segmentation_dictionary['bboxes'].append(predicted_bbox)
             self.segmentation_dictionary['labels'].append(label)
+            self.segmentation_dictionary['colors'].append(predicted_bbox_color)
 
         # Plotting the image.
         if do_display:
@@ -1448,7 +1508,13 @@ class DetectionEnv(Env):
                 cols = max_cols if num_objects > max_cols else num_objects
 
                 # Creating dictionary for the masks
-                masks = {self.segmentation_dictionary['names'][i]: self.segmentation_dictionary['masks'][i] for i in range(num_objects)}
+                num_objects = len(self.segmentation_dictionary['names'])
+
+                masks = {}
+                for i in range(num_objects):
+                    # Ensuring that the name is unique
+                    key = "Mask " + str(i + 1) + " - " + self.segmentation_dictionary['names'][i]
+                    masks[key] = self.segmentation_dictionary['masks'][i]
 
                 # Plotting the masks
                 self.plot_multiple_imgs(masks, rows, cols, suptitle='Instance Segmentation Masks')
@@ -1463,8 +1529,7 @@ class DetectionEnv(Env):
                     mask = self.segmentation_dictionary['masks'][i]
                     bbox = self.segmentation_dictionary['bboxes'][i]
                     name = self.segmentation_dictionary['names'][i]
-
-                    current_color = self.generate_random_color()
+                    current_color = self.segmentation_dictionary['colors'][i]
 
                     x1, y1, x2, y2 = bbox
 
@@ -1548,52 +1613,50 @@ class DetectionEnv(Env):
         """
         # Plotting the image.
         plt.figure(figsize=figure_size)
-        plt.imshow(image, cmap='Blues')
+        plt.imshow(image, cmap='Blues_r')
         plt.axis('off')
         if title is not None:
             plt.title(title, fontsize=20)
         plt.show()
        
-    def plot_multiple_imgs(self, images, rows=1, cols=1, suptitle="Instance Segmentation Masks", figure_size=(20, 10)):
+    def plot_multiple_imgs(self, images, rows=1, cols=1, suptitle="Instance Segmentation Masks", figure_size=(20, 7)):
         """
-            Function that plots multiple images.
+        Function that plots multiple images.
 
-            Input:
-                - Images to plot
-                - Number of rows
-                - Number of columns
+        Input:
+            - Images to plot
+            - Number of rows
+            - Number of columns
         """
-        # Function takes parameters number of rows and columns
-        # Creating a Grid, depending on the number of rows and columns
-        fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=figure_size) 
-        # Flattening the axes and taking the number of unwanted plots
+        # Calculate the total number of images to plot
+        total_images = len(images)
+
+        # Adjust rows and cols if there are fewer images than rows * cols
+        # rows = min(rows, total_images)
+        # cols = min(cols, -(-total_images // rows))  # Ceiling division to ensure enough space for all images
+
+        # Create the subplot grid
+        fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=figure_size)
+
+        # Flatten the axes in case rows or cols > 1
         axes = axes.flatten()
-        unwantedPlots=len(images)
-        # Looping through all the images
-        for i, (imageName, image) in enumerate(images.items()):
-            # Checking whether exceeded list and setting the number of unwantedPlots starting value
-            if i >= rows * cols:
-                unwantedPlots=i
-                break
-            
-            # Calculating row and column
-            row = i // cols 
-            col = i % cols
-            
-            # Error checking for axes keys
-            if row < rows and col < cols:
-                axes[i].imshow(image, interpolation='nearest', cmap='Blues_r') # Showing the image
-                axes[i].set_title("Mask: " + imageName, fontsize=18) # Setting the title
-                axes[i].axis('off') # Removing the axes
-        
-        # Deleting the extra plots
-        for i in range(unwantedPlots, len(axes)):
-            fig.delaxes(axes[i])
 
-        # Adjusting the layout
+        # Loop through images
+        for i, (imageName, image) in enumerate(images.items()):
+            # Plot the image
+            axes[i].imshow(image, interpolation='nearest', cmap='Blues_r')
+            axes[i].set_title(imageName, fontsize=18)
+            axes[i].axis('off')
+
+        # Deleting the extra axes which are not used
+        if len(images) < len(axes):
+            for j in range(len(images), len(axes)):
+                fig.delaxes(axes[j])
+
+        # Adjust layout
         fig.tight_layout()
 
-        # Showing plot
+        # Show the plot
         plt.show()
         
     def close(self):
@@ -1620,7 +1683,39 @@ class DetectionEnv(Env):
         # Pascal VOC classes
         self.classes = ['cat', 'bird', 'motorbike', 'diningtable', 'train', 'tvmonitor', 'bus', 'horse', 'car', 'pottedplant', 'person', 'chair', 'boat', 'bottle', 'bicycle', 'dog', 'aeroplane', 'cow', 'sheep', 'sofa']
 
-        self.current_class = self.classes[self.class_index]
+        # self.current_class = self.classes[self.class_index]
+
+        # Sorting the dataset by class
+        dataset = self.sort_pascal_voc_by_class(dataset)
+        
+        self.total_images = 0
+        for c_class in self.classes:
+            self.total_images += len(dataset[c_class])
+        
+        print('\033[92m' + 'Dataset loaded successfully.' + '\033[0m')
+        print('\033[93m' + 'Total number of classes in the dataset:', len(self.classes))
+        print('\033[94m' + 'Total number of images in the dataset:', self.total_images)
+
+        return dataset
+    
+    def load_training_dataset(self, path='data', download=True, image_set='train'):
+        """
+            Function that loads the Pascal VOC 2007 + 2012 dataset.
+        """
+        dataset_2007 = datasets.VOCDetection(path, year='2007', image_set=image_set, download=download)
+        dataset_2012 = datasets.VOCDetection(path, year='2012', image_set=image_set, download=download)
+
+        # Concatenating the datasets
+        dataset = torch.utils.data.ConcatDataset([dataset_2007, dataset_2012])
+
+        # Shuffle the dataset
+        indices = torch.randperm(len(dataset))
+        dataset = torch.utils.data.Subset(dataset, indices)
+
+        # Pascal VOC classes
+        self.classes = ['cat', 'bird', 'motorbike', 'diningtable', 'train', 'tvmonitor', 'bus', 'horse', 'car', 'pottedplant', 'person', 'chair', 'boat', 'bottle', 'bicycle', 'dog', 'aeroplane', 'cow', 'sheep', 'sofa']
+
+        # self.current_class = self.classes[self.class_index]
 
         # Sorting the dataset by class
         dataset = self.sort_pascal_voc_by_class(dataset)
@@ -1691,26 +1786,34 @@ class DetectionEnv(Env):
             Function that extracts the current image, original image and target bounding box from the dataset.
         """
         # Checking whether the dataset image index is greater than the length of the current class dataset, if so, we increment the class index and reset the dataset image index to 0
-        if self.class_image_index >= len(self.dataset[self.current_class]):
-            self.class_index += 1
+        # if self.class_image_index >= len(self.dataset[self.current_class]):
+        #     self.class_index += 1
 
-            # Checking whether the class index is greater than the length of the classes, if so, we reset the class index and dataset image index to 0 and increment the epochs
-            if self.class_index >= len(self.classes):
-                self.class_index = 0
-                self.epochs += 1
-                self.dataset_image_index = 0
-                print('\033[92m' + 'Epoch done.' + '\033[0m')
+        #     # Checking whether the class index is greater than the length of the classes, if so, we reset the class index and dataset image index to 0 and increment the epochs
+        #     if self.class_index >= len(self.classes):
+        #         self.class_index = 0
+        #         self.epochs += 1
+        #         self.dataset_image_index = 0
+        #         print('\033[92m' + 'Epoch done.' + '\033[0m')
 
-            self.current_class = self.classes[self.class_index]
-            self.class_image_index = 0
+        #     self.current_class = self.classes[self.class_index]
+        #     self.class_image_index = 0
         
         # Extracting image per class
         extracted_imgs_per_class = self.dataset[self.current_class]
 
+        # If the class image index is greater than the length of the current class dataset, then we reset the class image index
+        if self.class_image_index >= len(extracted_imgs_per_class):
+            self.class_image_index = 0
+            self.epochs += 1
+            print('\033[92m' + 'Epoch done for class: ' + self.current_class + '\033[0m')
+
         # Finding the key which corresponds to the current class image index
         img_name = list(extracted_imgs_per_class.keys())[self.class_image_index]
 
-        self.image = extracted_imgs_per_class[img_name][self.class_image_index][0]
+        img_information = extracted_imgs_per_class[img_name][0]
+
+        self.image = img_information[0]
 
         # Converting image to cv2 format
         self.image = cv2.cvtColor(np.array(self.image), cv2.COLOR_RGB2BGR)
@@ -1719,25 +1822,71 @@ class DetectionEnv(Env):
         self.height = self.image.shape[0]
         self.width = self.image.shape[1]
 
+        # Extracting the ground truth bounding boxes in dictionary format
+        gt_bboxes_dict = img_information[1:]
+
+        # Flatten the list
+        gt_bboxes_dict = [item for sublist in gt_bboxes_dict for item in sublist]
+
+        # Removing odd indices from the list which correspond to the width and height of the image
+        gt_bboxes_dict = [gt_bboxes_dict[i] for i in range(len(gt_bboxes_dict)) if i % 2 == 0]
+
+        # For each entry in the list, which is a dictionary, we change it in the form of [x1, y1, x2, y2]
+        for i in range(len(gt_bboxes_dict)):
+            gt_bboxes_dict[i] = [int(gt_bboxes_dict[i]['xmin']), int(gt_bboxes_dict[i]['ymin']), int(gt_bboxes_dict[i]['xmax']), int(gt_bboxes_dict[i]['ymax'])]
+
         # Extracting all the ground truth bounding boxes and labels
-        self.current_gt_bboxes = extracted_imgs_per_class[img_name][0][1]
-        print("Ground Truth Bounding Boxes: ", self.ground_truth_bboxes)
+        self.current_gt_bboxes = gt_bboxes_dict
 
-        # Extracting the first object
-        first_object = extracted_imgs_per_class[img_name][0][1][0]
-
-        x1, y1, x2, y2 = int(first_object['xmin']), int(first_object['ymin']), int(first_object['xmax']), int(first_object['ymax'])
-
-        self.target_bbox = [x1, y1, x2, y2]
+        # Setting the target bounding box
+        self.target_bbox = self.current_gt_bboxes[0]
         
         # Incrementing the class image index
         self.class_image_index += 1
 
-        # Incrementing the dataset image index
-        self.dataset_image_index += 1
+        # For Evaluation
+        if self.env_mode == 1: # Testing mode
+            # Appending the ground truth bounding boxes to the evaluation results
+            self.evaluation_results['gt_boxes'][img_name] = self.current_gt_bboxes
+
         pass
 
-    def generate_initial_bbox(self, threshold):
+    def save_evaluation_results(self, path='evaluation_results'):
+        """
+            Function that saves the evaluation results to a file.
+        """
+        # Creating the directory if it doesn't exist
+        os.makedirs(path, exist_ok=True)
+
+        # Saving the evaluation results to a numpy file
+        np.save(os.path.join(path, self.evaluation_results['class'] + '_evaluation_results.npy'), self.evaluation_results)
+        pass
+
+    def load_evaluation_results(self, path='evaluation_results'):
+        """
+            Function that loads the evaluation results from a file.
+        """
+        # Loading the evaluation results from a numpy file
+        self.evaluation_results = np.load(os.path.join(path, self.evaluation_results['class'] + '_evaluation_results.npy'), allow_pickle=True)
+        pass
+    
+    def filter_bboxes(self):
+        """
+            Function that filters the bounding boxes and adds them to the evaluation results.
+        """
+        # For Evaluation
+        if self.env_mode == 1: # Testing mode
+            # Extracting the image name
+            img_name = list(self.dataset[self.current_class].keys())[self.class_image_index - 1]
+
+            # Appending the bounding boxes to the evaluation results
+            # IMP CHECK CLASSIFICAITON DICTIONARY AS IT HAS OTHER FACTORS LIKE LABELS AND COFIDENCE
+            self.evaluation_results['bounding_boxes'][img_name] = self.classification_dictionary['bbox']
+            self.evaluation_results['labels'][img_name] = self.classification_dictionary['label']
+            self.evaluation_results['confidences'][img_name] = self.classification_dictionary['confidence']
+        pass
+        
+    def generate_initial_bbox(self, threshold=0.3):
         """
             Function that generates an initial bounding box prediction based on Saliency Ranking.
 

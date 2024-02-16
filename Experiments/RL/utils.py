@@ -30,23 +30,23 @@ SAVE_MODEL_PATH = "models/"
 # The learning rate α ∈ (0, 1] controls how much we update our current value estimates towards newly received returns.
 ALPHA = 1e-4
 # Gamma refers to the discount factor γ ∈ [0, 1]. It quantifies how much importance is given to future rewards.
-GAMMA = 0.9#0.5 #0.99
+GAMMA = 0.99#0.5 #0.99
 # The batch size is the number of training examples used in one iteration (that is, one gradient update) of training.
 BATCH_SIZE = 128#256
 # The buffer size is the number of transitions stored in the replay buffer, which the agent samples from to learn.
-BUFFER_SIZE = 500#10000
+BUFFER_SIZE = 10000#500
 # The minimum replay size is the minimum number of transitions that need to be stored in the replay buffer before the agent starts learning.
 MIN_REPLAY_SIZE = 250#5000
 # The maximum replay size is the maximum number of transitions that can be stored in the replay buffer.
 MAX_REPLAY_SIZE = 50
 # Epsilon start, epsilon end and epsilon decay are the parameters for the epsilon greedy exploration strategy.
 EPS_START = 1.0
-EPS_END = 0.1
+EPS_END = 0.01
 EPS_DECAY = 0.9#9
 # The target update frequency is the frequency with which the target network is updated.
 TARGET_UPDATE_FREQ = 5
 # The success criteria is the number of episodes the agent needs to solve the environment in order to consider the environment solved.
-SUCCESS_CRITERIA_EPS = 100
+SUCCESS_CRITERIA_EPS = 50#100
 # Success criteria for the the number of epochs to train the model
 SUCCESS_CRITERIA_EPOCHS = 15
 # Boolean Flag to determine which success criteria to use
@@ -340,7 +340,7 @@ def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, o
     # Returning all the metrics in a dictionary
     return {"class": current_class, "precision": prec, "recall": rec, "f1_score": f1_score, "average_iou": avg_iou, "average_precision": avg_precision, "average_precision_voc": ap, "iou_threshold": ovthresh, "num_images": len(bounding_boxes)}
 
-def calculate_detection_metrics(results):
+def calculate_detection_metrics(results, threshold_list=np.arange(0.5, 1.0, 0.05)):
     """
         Calculating the detection metrics for all the classes.
 
@@ -359,7 +359,7 @@ def calculate_detection_metrics(results):
     mAps = {}
 
     # Iterating through the threshold values
-    for ovthresh in np.arange(0.5, 1.0, 0.05):
+    for ovthresh in threshold_list:
 
         # Storing the average precision for each class at given IoU thresholds
         aps = {}

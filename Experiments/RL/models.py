@@ -125,9 +125,11 @@ def transform_input(image, target_size):
 #     def forward(self, x):
 #         return self.classifier(x)
 
-class DQN(nn.Module):
+class DQN2(nn.Module):
     """
         The DQN network that estimates the action-value function
+
+        The one used in the paper of the Active Object Localization.
 
         Args:
             ninputs: The number of inputs
@@ -139,7 +141,7 @@ class DQN(nn.Module):
             3. Linear layer with noutputs neurons
     """
     def __init__(self, ninputs, noutputs):
-        super(DQN, self).__init__()
+        super(DQN2, self).__init__()
         self.a1 = nn.Linear(ninputs, 1024)
         self.a2 = nn.Linear(1024, noutputs)
 
@@ -153,7 +155,7 @@ class DQN(nn.Module):
     def __call__(self, X):
         return self.forward(X)
 
-class DQN2(nn.Module):
+class DQN(nn.Module):
     """
     The DQN network that estimates the action-value function
 
@@ -177,21 +179,17 @@ class DQN2(nn.Module):
         13. Linear layer with noutputs neurons
     """
     def __init__(self, ninputs, noutputs):
-        super(DQN2, self).__init__()
+        super(DQN, self).__init__()
         self.classifier = nn.Sequential(
-            nn.Linear(ninputs, ninputs),
-            nn.BatchNorm1d(ninputs),
+            nn.Linear(ninputs, 1024),
             nn.ReLU(),
-            nn.Linear(ninputs, ninputs // 2),
-            nn.BatchNorm1d(ninputs // 2),
+            nn.Linear(1024, 512),
             nn.ReLU(),
-            nn.Linear(ninputs // 2, ninputs // 4),
-            nn.BatchNorm1d(ninputs // 4),
+            nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Linear(ninputs // 4, ninputs // 8),
-            nn.BatchNorm1d(ninputs // 8),
+            nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(ninputs // 8, noutputs)
+            nn.Linear(128, noutputs)
         )
 
     def forward(self, X):
