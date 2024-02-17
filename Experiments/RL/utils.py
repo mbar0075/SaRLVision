@@ -1,7 +1,9 @@
+import os
 import torch
 import random
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from collections import namedtuple, deque
 
 # Setting the device to cpu as it was faster than gpu for this task
@@ -42,15 +44,15 @@ MAX_REPLAY_SIZE = 50
 # Epsilon start, epsilon end and epsilon decay are the parameters for the epsilon greedy exploration strategy.
 EPS_START = 1.0
 EPS_END = 0.01
-EPS_DECAY = 0.9#9
+EPS_DECAY = 0.99
 # The target update frequency is the frequency with which the target network is updated.
 TARGET_UPDATE_FREQ = 5
 # The success criteria is the number of episodes the agent needs to solve the environment in order to consider the environment solved.
 SUCCESS_CRITERIA_EPS = 50#100
 # Success criteria for the the number of epochs to train the model
-SUCCESS_CRITERIA_EPOCHS = 15
+SUCCESS_CRITERIA_EPOCHS = 1#15
 # Boolean Flag to determine which success criteria to use
-USE_EPISODE_CRITERIA = True
+USE_EPISODE_CRITERIA = False#True
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
 
@@ -340,7 +342,54 @@ def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, o
     # Returning all the metrics in a dictionary
     return {"class": current_class, "precision": prec, "recall": rec, "f1_score": f1_score, "average_iou": avg_iou, "average_precision": avg_precision, "average_precision_voc": ap, "iou_threshold": ovthresh, "num_images": len(bounding_boxes)}
 
-def calculate_detection_metrics(results, threshold_list=np.arange(0.5, 1.0, 0.05)):
+def plot_precision_recall_curve_for_all_classes(dfs, title="Precision-Recall Curve", save_path=None, figsize=(20, 10)):
+    """
+        Plotting the precision-recall curve for all the classes.
+
+        Args:
+            dfs: The list of dataframes containing the detection metrics for each class at given IoU thresholds.
+            title: The title of the plot.
+            save_path: The path to save the plot.
+
+        Returns:
+            None
+    """
+    # Initializing the figure
+    plt.figure(figsize=figsize)
+
+    # Using the seaborn style
+    plt.style.use("seaborn")
+
+    # Iterating through the dataframes
+    for df in dfs:
+        # Retrieving the class
+        current_class = df["class"].values[0]
+
+        # Retrieving the precision and recall
+        precision = df["precision"].values[0]
+        recall = df["recall"].values[0]
+
+        # Plotting the precision-recall curve
+        plt.plot(recall, precision, label=f"{current_class}")
+
+    # Setting the title and labels
+    plt.title(title)
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+
+    # Setting the legend
+    plt.legend()
+
+    plt.tight_layout()
+
+    # Saving the plot if a save path is provided
+    if save_path is not None:
+        plt.savefig(save_path)
+
+    # Showing the plot
+    plt.show()
+
+def calculate_detection_metrics(results_path, threshold_list=np.arange(0.5, 1.0, 0.05)):
     """
         Calculating the detection metrics for all the classes.
 
@@ -351,6 +400,20 @@ def calculate_detection_metrics(results, threshold_list=np.arange(0.5, 1.0, 0.05
             An array of pandas dataframes containing the detection metrics for each class at given IoU thresholds.
             mAps: The mean average precision for each class at given IoU thresholds.
     """
+    # Declaring the results dictionary
+    results = {}
+
+    # Loading all files in the results path directory
+    for file in os.listdir(results_path):
+        # Loading the results
+        current_results = np.load(os.path.join(results_path, file), allow_pickle=True).item()
+
+        # Retrieving the class
+        current_class = current_results["class"]
+
+        # Storing the results in the results dictionary
+        results[current_class] = current_results
+
     # Retrieving the classes
     classes = results.keys()
 
@@ -387,6 +450,9 @@ def calculate_detection_metrics(results, threshold_list=np.arange(0.5, 1.0, 0.05
 
         # Appending the dataframe to the list of dataframes
         dfs.append(df)
+
+    # Plotting the precision-recall curve for all the classes
+    plot_precision_recall_curve_for_all_classes(dfs, title="Precision-Recall Curve", save_path="precision_recall_curve.png")
 
     # Returning the list of dataframes and the mean average precision
     return dfs, mAps

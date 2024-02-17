@@ -353,10 +353,10 @@ class DetectionEnv(Env):
 
         # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
         if reward >= self.threshold:
-            return self.nu
+            return self.nu * reward # The times reward is extra, to give the agent th eincentive to find better bounding boxes
         
         # Returning -1*trigger reward.
-        return -1*self.nu
+        return -1*self.nu * reward
     
     def get_features(self, image, dtype=FloatTensor):
         """
@@ -1816,7 +1816,8 @@ class DetectionEnv(Env):
         self.image = img_information[0]
 
         # Converting image to cv2 format
-        self.image = cv2.cvtColor(np.array(self.image), cv2.COLOR_RGB2BGR)
+        self.image = np.array(self.image)
+        # self.image = cv2.cvtColor(np.array(self.image), cv2.COLOR_RGB2BGR)
         self.original_image = self.image.copy()
 
         self.height = self.image.shape[0]
