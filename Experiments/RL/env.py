@@ -37,13 +37,13 @@ THRESHOLD = 0.6#Stopping criterion for threshold, use 0.5 for testing
 ALPHA = 0.2#0.1 #0.15 # Scaling factor for bounding box movements
 MAX_STEPS = 200#200#50 # Maximum number of steps
 TRIGGER_STEPS = 40 # Number of steps before the trigger
-RENDER_MODE = 'human'# None, 'rgb_array', 'bbox', 'trigger_image'
+RENDER_MODE = None #'human'# None, 'rgb_array', 'bbox', 'trigger_image'
 FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
 CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
 REWARD_FUNC = iou
-ENV_MODE = 0 # 0 for training, 1 for testing
+ENV_MODE = TRAIN_MODE # 0 for training, 1 for testing
 USE_DATASET = None # Whether to use the dataset or not, or to use the image directly (dataset path)
 DATASET_YEAR = '2007' # Pascal VOC Dataset Year
 DATASET_IMAGE_SET = 'train'
@@ -288,14 +288,14 @@ class DetectionEnv(Env):
         """
             Function that sets the environment mode to training.
         """
-        self.env_mode = 0
+        self.env_mode = TRAIN_MODE
         pass
 
     def test(self):
         """
             Function that sets the environment mode to testing.
         """
-        self.env_mode = 1
+        self.env_mode = TEST_MODE
 
         # For Evaluation
         if self.use_dataset is not None:
@@ -353,10 +353,10 @@ class DetectionEnv(Env):
 
         # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
         if reward >= self.threshold:
-            return self.nu * reward # The times reward is extra, to give the agent th eincentive to find better bounding boxes
+            return self.nu * reward # The times reward is extra, to give the agent the incentive to find better bounding boxes
         
         # Returning -1*trigger reward.
-        return -1*self.nu * reward
+        return -1*self.nu # Multiplying the negative reward by the IoU is not necessary, as doing so would be downscaling the negative reward, which makes the agent trigger on IoUs lower than the threshold.
     
     def get_features(self, image, dtype=FloatTensor):
         """
@@ -797,39 +797,53 @@ class DetectionEnv(Env):
         # Returning the observation space.
         return self.get_state(), self.get_info()
     
-    def get_label(self):
+    def get_labels(self):
         """
-            Function that returns the label of the image.
+            Function that returns the labels of the images.
 
             Output:
-                - Label of the image
+                - Labels of the images
         """
-        # Retrieving the bounding box coordinates.
-        x1, y1, x2, y2 = self.bbox
+        # Initializing an empty list to store the labels.
+        images = []
 
-        # Cropping the image.
-        image = self.original_image[y1:y2, x1:x2]
+        # Iterating through the bounding boxes
+        for bbox in self.classification_dictionary['bbox']:
+            # Retrieving the bounding box coordinates.
+            x1, y1, x2, y2 = bbox
 
-        # Resize the image to the target size using OpenCV
-        image = cv2.resize(image, self.classifier_target_size)
+            # Cropping the image.
+            image = self.original_image[y1:y2, x1:x2]
 
-        # Prepare the image for the VGG16 model
-        image = preprocess_input(image)
+            # Resizing the image to the target size using OpenCV
+            image = cv2.resize(image, self.classifier_target_size)
 
-        # Expanding the dimensions to match the model's expectations
-        image = np.expand_dims(image, axis=0)
+            # Preparing the image for the Classifier
+            image = preprocess_input(image)
 
-        # Predicting the class
-        preds = self.classifier.predict(image, verbose=0)
+            # Expanding the dimensions to match the model's expectations
+            image = np.expand_dims(image, axis=0)
 
-        # Retrieving the Label and the confidence of the image.
-        label = decode_predictions(preds, top=1)[0][0]
+            # Adding the image to the list of images
+            images.append(image)
 
-        # Storing the label, the cofidence and the bounding box of the image in the classification dictionary.
-        self.classification_dictionary['label'].append(label[1])
-        self.classification_dictionary['confidence'].append(label[2])
-        self.classification_dictionary['bbox'].append(self.bbox)
-        self.classification_dictionary['color'].append(self.generate_random_color())
+        # Converting the list of images to a numpy array
+        images = np.concatenate(images, axis=0)
+
+        # Predicting the classes
+        preds = self.classifier.predict(images, verbose=0)
+
+        labels = decode_predictions(preds, top=1)
+
+        # Iterating through the predictions and the bounding boxes
+        for label, bbox in zip(labels, self.classification_dictionary['bbox']):
+            # Retrieving the Label and the confidence of the image.
+            label = label[0]
+
+            # Storing the label, the confidence and the bounding box of the image in the classification dictionary.
+            self.classification_dictionary['label'].append(label[1])
+            self.classification_dictionary['confidence'].append(label[2])
+            self.classification_dictionary['color'].append(self.generate_random_color())
         pass
     
     def predict(self, do_display=True, do_save=False, save_path=None):
@@ -871,10 +885,12 @@ class DetectionEnv(Env):
         self.image = self.draw_ior_cross(self.image.copy(), self.bbox)
 
         # Predicting the label of the image
-        self.get_label()
+        # if self.env_mode == 1: # Testing mode
+        #     self.get_label()
+        self.classification_dictionary['bbox'].append(self.bbox)
 
         # Resetting bounding box to start from either of the corners and instead of having the whole image size, it will have a 75% of the image size
-        if self.env_mode == 1: # Testing mode
+        if self.env_mode == TEST_MODE: # Testing mode
             if self.no_of_triggers % 4 == 0:
                 self.bbox = [0, 0, int(self.width*0.75), int(self.height*0.75)]
             elif self.no_of_triggers % 4 == 1:
@@ -1009,6 +1025,10 @@ class DetectionEnv(Env):
             # if self.env_mode == 0: # Training mode
             #     self.bbox = self.best_bbox # Set the bounding box to the best bounding box (Model checkpoint)
 
+            # For classification
+            if self.env_mode == TEST_MODE: # Testing mode
+                self.get_labels()
+
         if self.is_render:
             self.render(self.render_mode)
 
@@ -1076,7 +1096,7 @@ class DetectionEnv(Env):
                 alpha = 0.5
 
             # Creating target bounding box
-            if self.env_mode == 0:
+            if self.env_mode == TRAIN_MODE: # Training mode
                 # Creating a different color for the target bounding box from the current bounding box
                 target_color = (0, 255, 0) if self.color != (0, 255, 0) else (255, 0, 0)
 
@@ -1170,7 +1190,7 @@ class DetectionEnv(Env):
             text = font.render('Action: ' + str(self.decode_render_action(self.current_action)), True, (255, 255, 255))
             image_surface.blit(text, (0, 0))
 
-            if self.env_mode == 0:
+            if self.env_mode == TRAIN_MODE: # Training mode
                 marker_ratio = 0.05  # 5% of the window size
                 label_ratio_x = 0.25  # 25% from the right edge of the window
                 label_ratio_y = 0.05  # 5% from the bottom edge of the window

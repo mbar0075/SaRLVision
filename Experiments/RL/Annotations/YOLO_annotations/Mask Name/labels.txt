@@ -1,1 +1,1 @@
-microwave 0
+theater_curtain 0

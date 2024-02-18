@@ -53,6 +53,9 @@ SUCCESS_CRITERIA_EPS = 50#100
 SUCCESS_CRITERIA_EPOCHS = 1#15
 # Boolean Flag to determine which success criteria to use
 USE_EPISODE_CRITERIA = False#True
+# Environment Modes
+TRAIN_MODE = 0
+TEST_MODE = 1
 
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
 

@@ -70,7 +70,7 @@ class DQNAgent():
         """ Selects an action using an epsilon greedy policy """
         # Selecting a random action with probability epsilon
         if random.random() <= self.epsilon: # Exploration
-            if self.env.env_mode == 0: # Training mode
+            if self.env.env_mode == TRAIN_MODE: # Training mode
                 # Expert agent action selection
                 action = self.expert_agent_action_selection()
             else:# Testing mode
