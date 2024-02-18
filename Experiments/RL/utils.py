@@ -44,7 +44,7 @@ MAX_REPLAY_SIZE = 50
 # Epsilon start, epsilon end and epsilon decay are the parameters for the epsilon greedy exploration strategy.
 EPS_START = 1.0
 EPS_END = 0.01
-EPS_DECAY = 0.99
+EPS_DECAY = 0.999
 # The target update frequency is the frequency with which the target network is updated.
 TARGET_UPDATE_FREQ = 5
 # The success criteria is the number of episodes the agent needs to solve the environment in order to consider the environment solved.
