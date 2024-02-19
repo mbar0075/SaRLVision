@@ -172,6 +172,8 @@ class DetectionEnv(Env):
         else:
             self.feature_extractor = FEATURE_EXTRACTOR
 
+        self.feature_extractor.to(device)
+
         self.transform = transform_input(self.image, self.target_size)
 
         # Initializing the action space and the observation space.
@@ -371,8 +373,8 @@ class DetectionEnv(Env):
         # Transforming the image.
         image = transform_input(image, target_size=self.target_size)
 
-        # Retrieving the features of the image.
-        features = self.feature_extractor(image.unsqueeze(0))
+        # Retrieving the features of the image (unsqueeze is added since it is expecting a batch, and squeeze is added to remove the batch dimension).
+        features = self.feature_extractor(image.unsqueeze(0).to(device)).squeeze(0)
 
         # Returning the features.
         return features
@@ -390,10 +392,10 @@ class DetectionEnv(Env):
         # Retrieving the features of the image.
         features = self.get_features(image)
 
-        # Transposing the features.
-        features = features.view(1, -1).detach()
+        # Transposing the features and detaching it from the GPU (view is added to flatten the tensor and detach is added to remove the gradient from the tensor)
+        features = features.view(1, -1).detach().cpu()
 
-        # Flattenning the action history.
+        # Flattenning the action history and converting it to a tensor of type float (view is added to flatten the tensor and detach is added to remove the gradient from the tensor)
         action_history = torch.tensor(self.actions_history, dtype=dtype).flatten().view(1, -1)
 
         # Normalising bounding box coordinates so that they are between 0 and 1
@@ -403,11 +405,11 @@ class DetectionEnv(Env):
         action_history = torch.cat((torch.tensor(normalised_bbox, dtype=dtype).view(1, -1), action_history), 1)
         # action_history = torch.tensor(self.bbox, dtype=dtype).view(1, -1)
 
-        # Concatenating the features and the action history.
+        # Concatenating the features and the action history (1  is beiing used to specify the dimension along which the tensors are concatenated).
         state = torch.cat((action_history, features), 1)
 
         # Returning the state.
-        return state.detach().cpu().numpy()
+        return state.numpy()
     
     def update_history(self, action):
         """
@@ -616,6 +618,13 @@ class DetectionEnv(Env):
             'recall': recall(self.bbox, self.target_bbox),
             'threshold': self.threshold,
             'classification_dictionary': self.classification_dictionary,
+            'env_mode': self.env_mode,
+            'use_dataset': self.use_dataset,
+            'dataset_year': self.dataset_year,
+            'dataset_image_set': self.dataset_image_set,
+            'epochs': self.epochs,
+            'classes': self.classes,
+            'current_class': self.current_class,
         }
     
     def generate_random_color(self, threshold=0.3):
