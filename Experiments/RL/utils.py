@@ -50,7 +50,7 @@ TARGET_UPDATE_FREQ = 5
 # The success criteria is the number of episodes the agent needs to solve the environment in order to consider the environment solved.
 SUCCESS_CRITERIA_EPS = 50#100
 # Success criteria for the the number of epochs to train the model
-SUCCESS_CRITERIA_EPOCHS = 1#15
+SUCCESS_CRITERIA_EPOCHS = 10#15
 # Boolean Flag to determine which success criteria to use
 USE_EPISODE_CRITERIA = False#True
 # Environment Modes
@@ -290,37 +290,48 @@ def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     # Returning the precision, recall, f1 score, average IoU and average precision
     return precision, recall, f1_score, avg_iou, avg_precision
 
-def voc_ap(rec, prec):
+def voc_ap(rec, prec, voc2007=False):
     """
-        Calculating the VOC detection metric.
+    Calculating the Average Precision (AP) and Recall.
 
-        Args:
-            rec: The recall values.
-            prec: The precision values.
+    Args:
+        rec: Array of recall values.
+        prec: Array of precision values.
+        voc2007: Boolean flag indicating whether to use the method recommended by the PASCAL VOC 2007 paper (11-point method).
 
-        Returns:
-            The average precision.
+    Returns:
+        The average precision (AP) = 1/11 * ∑ (r_n - r_{n-1}) * p_n
+
+    More information:
+    - If voc2007 is True, then the method recommended by the PASCAL VOC 2007 paper (11-point method) is used.
+    - The average precision is calculated by integrating the precision-recall curve.
+    - The precision-recall curve is constructed by interpolating the precision values at different recall levels.
+    - The AP is the area under the precision-recall curve.
     """
-    # Append 0.0 to the beginning and 1.0 to the end of the recall array,
-    # and append 0.0 to the beginning and end of the precision array.
-    # This is done to ensure that the precision-recall curve starts from (0,0) and ends at (1,0).
-    mrec = np.concatenate(([0.0], rec, [1.0]))
-    mpre = np.concatenate(([0.0], prec, [0.0]))
+    if voc2007:
+        ap = 0.0
+        # 11-point method recommended by the PASCAL VOC 2007 paper
+        for t in np.arange(0.0, 1.1, 0.1):
+            # If the recall is greater than the threshold, then the interpolated precision is the maximum precision at a recall level greater than the threshold
+            if np.sum(rec >= t) == 0:
+                p = 0
+            else:
+                p = np.max(prec[rec >= t])
+            # Summing the interpolated precision
+            ap = ap + p / 11.0  # Calculate AP using the 11-point method
+    else:
+        # If voc2007 is False, then the method recommended by the PASCAL VOC 2010 paper is used
+        # The precision-recall curve is constructed by interpolating the precision values at different recall levels
+        mrec = np.concatenate(([0.0], rec, [1.0]))
+        mpre = np.concatenate(([0.0], prec, [0.0]))
 
-    # Replace each precision value with the maximum precision value to its right.
-    # This is done to compute the precision envelope, which is needed to calculate AP.
-    for i in range(mpre.size - 1, 0, -1):
-        mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
+        # Interpolating the precision at different recall levels by taking the maximum precision at a recall level greater than the current recall level
+        for i in range(mpre.size - 1, 0, -1):
+            mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
 
-    # Find the indices where the recall value changes.
-    # These are the points where the precision-recall curve steps down.
-    i = np.where(mrec[1:] != mrec[:-1])[0]
-
-    # Calculate AP as the sum of the products of the differences in recall and the corresponding precision values.
-    # This is equivalent to calculating the area under the precision-recall curve.
-    ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
-
-    # Return the calculated AP.
+        # Calculating the average precision by integrating the precision-recall curve
+        i = np.where(mrec[1:] != mrec[:-1])[0]
+        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # Calculate AP by integrating the precision-recall curve
     return ap
 
 def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, ovthresh):

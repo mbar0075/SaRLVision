@@ -47,6 +47,9 @@ ENV_MODE = TRAIN_MODE # 0 for training, 1 for testing
 USE_DATASET = None # Whether to use the dataset or not, or to use the image directly (dataset path)
 DATASET_YEAR = '2007' # Pascal VOC Dataset Year
 DATASET_IMAGE_SET = 'train'
+SINGLE_OBJ = 0 # Whether to use single object or not
+MULTI_OBJ = 1 # Whether to use multiple objects or not
+OBJ_COFIGURATION = SINGLE_OBJ # Configuration of the objects
 
 
 class DetectionEnv(Env):
@@ -105,6 +108,13 @@ class DetectionEnv(Env):
 
         # For environment mode
         self.env_mode = ENV_MODE
+
+        # Setting the object configuration
+        if 'obj_configuration' in env_config:
+            self.obj_configuration = env_config['obj_configuration']
+            del env_config['obj_configuration']
+        else:
+            self.obj_configuration = OBJ_COFIGURATION
 
         if self.use_dataset is not None:
             if not self.dataset_year != '2007+2012':
@@ -208,6 +218,10 @@ class DetectionEnv(Env):
         else:
             self.trigger_steps = TRIGGER_STEPS
 
+        # If the object configuration is single object, then the maximum number of steps will be the trigger steps
+        if self.obj_configuration == SINGLE_OBJ:
+            self.max_steps = self.trigger_steps
+
         # Setting the number of triggers to 0
         self.no_of_triggers = 0
 
@@ -299,6 +313,9 @@ class DetectionEnv(Env):
         """
         self.env_mode = TEST_MODE
 
+        if self.classification_dictionary['bbox'] != []:
+            self.get_labels()
+
         # For Evaluation
         if self.use_dataset is not None:
             self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': [], 'confidences': []}
@@ -355,7 +372,7 @@ class DetectionEnv(Env):
 
         # If the reward is larger than the threshold, we return trigger reward else we return -1*trigger reward.
         if reward >= self.threshold:
-            return self.nu * reward # The times reward is extra, to give the agent the incentive to find better bounding boxes
+            return self.nu * 2 * reward # The times reward is extra, to give the agent the incentive to find better bounding boxes
         
         # Returning -1*trigger reward.
         return -1*self.nu # Multiplying the negative reward by the IoU is not necessary, as doing so would be downscaling the negative reward, which makes the agent trigger on IoUs lower than the threshold.
@@ -1011,6 +1028,10 @@ class DetectionEnv(Env):
             reward = self.calculate_trigger_reward(current_state, self.target_bbox)
 
             self.restart_and_change_state()
+
+            # In case of single object detection, we terminate the episode after the first trigger
+            if self.obj_configuration == SINGLE_OBJ:
+                self.terminated = True
             # Setting the episode to be terminated.
             # self.terminated = True
 
@@ -1668,7 +1689,7 @@ class DetectionEnv(Env):
         fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=figure_size)
 
         # Flatten the axes in case rows or cols > 1
-        axes = axes.flatten()
+        axes = np.ravel(axes)
 
         # Loop through images
         for i, (imageName, image) in enumerate(images.items()):
@@ -1832,10 +1853,12 @@ class DetectionEnv(Env):
         extracted_imgs_per_class = self.dataset[self.current_class]
 
         # If the class image index is greater than the length of the current class dataset, then we reset the class image index
-        if self.class_image_index >= len(extracted_imgs_per_class):
+        if self.class_image_index >= len(self.dataset[self.current_class]):
             self.class_image_index = 0
             self.epochs += 1
-            print('\033[92m' + 'Epoch done for class: ' + self.current_class + '\033[0m')
+            print("*"*100)
+            print('\033[92m' + 'Epoch ' + str(self.epochs) + ' done for class ' + self.current_class + '.' + '\033[0m')
+            print("*"*100)
 
         # Finding the key which corresponds to the current class image index
         img_name = list(extracted_imgs_per_class.keys())[self.class_image_index]

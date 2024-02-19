@@ -1,1 +1,1 @@
-theater_curtain 0
+grille 0

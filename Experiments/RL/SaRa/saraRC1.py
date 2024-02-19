@@ -799,7 +799,7 @@ def reset():
 
 
 
-def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.2):
+def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.3):
     def generate_segments(image, seg_count) -> dict:
         """
             Function to generate segments of an image
@@ -890,3 +890,25 @@ def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.2):
     x1, y1 = coords.max(axis=0)[:2] + 1
     cropped_img = img[x0:x1, y0:y1]
     return cropped_img , most_imp_ranks, [x0, y0, x1, y1]
+
+def sara_resize(img, sara_info, grid_size, rate=0.3, iterations=3):
+    """
+        Function to resize an image based on SaRa
+
+        Args:
+            img: input image
+            sara_info: SaRa information
+            grid_size: size of the grid
+            rate: rate of important ranks
+            iterations: number of iterations to resize
+
+        Returns:
+            img: resized image
+    """
+    # Iterating through iterations
+    for _ in range(iterations):
+        # Resizing image based on important ranks
+        img, most_imp_ranks, coords = resize_based_on_important_ranks(img, sara_info, grid_size, rate=rate)
+
+    # Returning resized image
+    return img, most_imp_ranks, coords
