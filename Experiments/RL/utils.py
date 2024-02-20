@@ -32,13 +32,13 @@ SAVE_MODEL_PATH = "models/"
 # The learning rate α ∈ (0, 1] controls how much we update our current value estimates towards newly received returns.
 ALPHA = 1e-4
 # Gamma refers to the discount factor γ ∈ [0, 1]. It quantifies how much importance is given to future rewards.
-GAMMA = 0.99#0.5 #0.99
+GAMMA = 0.99
 # The batch size is the number of training examples used in one iteration (that is, one gradient update) of training.
-BATCH_SIZE = 128#256
+BATCH_SIZE = 512#256
 # The buffer size is the number of transitions stored in the replay buffer, which the agent samples from to learn.
-BUFFER_SIZE = 10000#500
+BUFFER_SIZE = 10000
 # The minimum replay size is the minimum number of transitions that need to be stored in the replay buffer before the agent starts learning.
-MIN_REPLAY_SIZE = 250#5000
+MIN_REPLAY_SIZE = 250
 # The maximum replay size is the maximum number of transitions that can be stored in the replay buffer.
 MAX_REPLAY_SIZE = 50
 # Epsilon start, epsilon end and epsilon decay are the parameters for the epsilon greedy exploration strategy.
@@ -50,7 +50,7 @@ TARGET_UPDATE_FREQ = 5
 # The success criteria is the number of episodes the agent needs to solve the environment in order to consider the environment solved.
 SUCCESS_CRITERIA_EPS = 50#100
 # Success criteria for the the number of epochs to train the model
-SUCCESS_CRITERIA_EPOCHS = 10#15
+SUCCESS_CRITERIA_EPOCHS = 15
 # Boolean Flag to determine which success criteria to use
 USE_EPISODE_CRITERIA = False#True
 # Environment Modes
@@ -220,6 +220,60 @@ def recall(bbox, target_bbox):
     # Returning the recall
     return recall
 
+def calculate_best_iou(bounding_boxes, gt_boxes):
+    """
+        Calculating the best IoU between the bounding boxes and the ground truth boxes.
+
+        Args:
+            bounding_boxes: The predicted bounding boxes.
+            gt_boxes: The ground truth bounding boxes.
+
+        Returns:
+            The best IoU between the bounding boxes and the ground truth boxes.
+    """
+    # Initializing the best IoU
+    best_iou = -np.inf
+
+    # Iterating through the bounding boxes
+    for bbox in bounding_boxes:
+        # Iterating through the ground truth boxes
+        for gt_box in gt_boxes:
+            # Calculating the IoU
+            current_iou = iou(bbox, gt_box)
+
+            # Updating the best IoU
+            best_iou = max(best_iou, current_iou)
+
+    # Returning the best IoU
+    return best_iou
+
+def calculate_best_recall(bounding_boxes, gt_boxes):
+    """
+        Calculating the best recall between the bounding boxes and the ground truth boxes.
+
+        Args:
+            bounding_boxes: The predicted bounding boxes.
+            gt_boxes: The ground truth bounding boxes.
+
+        Returns:
+            The best recall between the bounding boxes and the ground truth boxes.
+    """
+    # Initializing the best recall
+    best_recall = -np.inf
+
+    # Iterating through the bounding boxes
+    for bbox in bounding_boxes:
+        # Iterating through the ground truth boxes
+        for gt_box in gt_boxes:
+            # Calculating the recall
+            recall_score = recall(bbox, gt_box)
+
+            # Updating the best recall
+            best_recall = max(best_recall, recall_score)
+
+    # Returning the best recall
+    return best_recall
+
 def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     """
         Calculating the precision and recall using the Intersection over Union (IoU) and according to the threshold between the ground truths and the predictions.
@@ -249,21 +303,24 @@ def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     fn = np.zeros(num_bounding_boxes)
 
     # Initializing the IoU, precision and recall
-    iou = np.zeros(num_bounding_boxes)
+    ious = np.zeros(num_bounding_boxes)
     precision = np.zeros(num_bounding_boxes)
     recall = np.zeros(num_bounding_boxes)
+
+    # Retrieving img_ids
+    img_ids = list(bounding_boxes.keys())
 
     # Iterating through the bounding boxes
     for index in range(num_bounding_boxes):
         # Retrieving the bounding boxes
-        prediction = bounding_boxes[index]
-        target = gt_boxes[index]
+        prediction = bounding_boxes[img_ids[index]]
+        target = gt_boxes[img_ids[index]]
 
         # Calculating the IoU
-        iou[index] = iou(prediction, target)
+        ious[index] = calculate_best_iou(prediction, target)
 
         # Calculating the precision and recall
-        if iou[index] > ovthresh:
+        if ious[index] > ovthresh:
             tp[index] = 1.0
         else:
             fp[index] = 1.0
@@ -282,7 +339,7 @@ def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     f1_score = 2 * (precision * recall) / (precision + recall)
 
     # Calculating the average IoU
-    avg_iou = np.mean(iou)
+    avg_iou = np.mean(ious)
 
     # Calculating the average precision
     avg_precision = np.mean(precision)
@@ -290,7 +347,7 @@ def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     # Returning the precision, recall, f1 score, average IoU and average precision
     return precision, recall, f1_score, avg_iou, avg_precision
 
-def voc_ap(rec, prec, voc2007=False):
+def voc_ap(rec, prec, voc2007=True):
     """
     Calculating the Average Precision (AP) and Recall.
 
@@ -452,9 +509,9 @@ def calculate_detection_metrics(results_path, threshold_list=np.arange(0.5, 1.0,
 
             # Calculating the detection metrics
             detection_metrics = calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, ovthresh)
-
-            # Appending the detection metrics to the dataframe
-            df = df.append(detection_metrics, ignore_index=True)
+            print(detection_metrics)
+            # Adding the detection metrics to the dataframe
+            df = df.append(pd.DataFrame(detection_metrics), ignore_index=True)
 
             # Storing the average precision for each class at given IoU thresholds
             aps[current_class] = detection_metrics["average_precision_voc"]
@@ -462,7 +519,7 @@ def calculate_detection_metrics(results_path, threshold_list=np.arange(0.5, 1.0,
         # Calculating the mean average precision for each class at given IoU thresholds
         mAps[ovthresh] = np.mean(list(aps.values()))
 
-        # Appending the dataframe to the list of dataframes
+        # Appending the DataFrame to the list of DataFrames
         dfs.append(df)
 
     # Plotting the precision-recall curve for all the classes

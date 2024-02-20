@@ -63,7 +63,7 @@ class DQNAgent():
         self.epsilon = EPS_START
         self.steps_done = 0
         self.episodes = 0
-        self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "avg_iou": [], "iou": [], "recall": [], "avg_recall": [], "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
+        self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "avg_iou": [], "iou": [], "final_iou": [], "recall": [], "avg_recall": [], "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
         self.display_every_n_episodes = 1
 
     def select_action(self, state):
@@ -97,8 +97,8 @@ class DQNAgent():
         # Retrieving the bounding box from the environment
         old_state = self.env.bbox
 
-        # Retrieving the target bounding box from the environment
-        target_bbox = self.env.target_bbox
+        # Retrieving the target bounding boxes from the environment
+        target_bboxes = self.env.current_gt_bboxes
 
         # Looping through the actions
         for action in range(self.noutputs):
@@ -107,9 +107,9 @@ class DQNAgent():
 
             # Calculating the reward
             if action < 8:
-                reward = self.env.calculate_reward(new_state, old_state, target_bbox)
+                reward = self.env.calculate_reward([new_state], [old_state], target_bboxes)
             else:
-                reward = self.env.calculate_trigger_reward(new_state, target_bbox)
+                reward = self.env.calculate_trigger_reward([new_state], target_bboxes)
 
             # Appending the action to the positive or negative actions list based on the reward
             if reward > 0:
@@ -210,6 +210,9 @@ class DQNAgent():
 
             # Ending the episode and displaying the results if the episode is done
             if done:
+                # Appending the final IoU to the episode info
+                self.episode_info["final_iou"].append(info["iou"])
+                
                 # Appending the rewards to the replay buffer
                 self.replay_buffer.rewards.append(episode_reward)
 
@@ -259,13 +262,15 @@ class DQNAgent():
                 
                 # Displaying the results
                 if self.episodes % self.display_every_n_episodes == 0:
-                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {} \033[35mAverage IoU:\033[0m {:.2f} \033[35mAverage Recall:\033[0m {:.2f}".format(
+                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {} \033[35mAverage IoU:\033[0m {:.2f} \033[35mAverage Recall:\033[0m {:.2f} \033[35mEpochs:\033[0m {} \033[35mFinal IoU:\033[0m {:.2f}".format(
                                 self.episodes,
                                 self.epsilon,
                                 self.episode_info["episode_avg_rewards"][-1],
                                 self.episode_info["episode_lengths"][-1],
                                 avg_iou,
-                                avg_recall)
+                                avg_recall,
+                                self.env.epochs,
+                                self.episode_info["final_iou"][-1])
                         )
                     print("-" * 100)
 
@@ -300,6 +305,39 @@ class DQNAgent():
         # Training the agent
         self.train()
 
+    def evaluate(self, path="evaluation_results"):
+        """ Evaluates the agent """
+        # Resetting the environment
+        obs, _ = self.env.reset()
+
+        # Running the agent for an epoch
+        while True:
+            # Selecting an action
+            action = self.select_action(obs)
+
+            # Taking a step in the environment
+            new_obs, _, terminated, truncated, _ = self.env.step(action)
+
+            # Setting done to terminated or truncated
+            done = terminated or truncated
+
+            # Resetting the observation
+            obs = new_obs
+
+            # Ending the episode and displaying the results if the episode is done
+            if done:
+                # Resetting the environment
+                obs, _ = self.env.reset()
+
+                # Incrementing the number of episodes
+                self.episodes += 1
+
+            # Exiting if the number of epochs is greater than or equal to 1
+            if self.env.epochs >= 1:
+                break
+
+        # Saving the evaluation results
+        self.env.save_evaluation_results()
 
     def test(self, file_path='dqn_render',video_filename='output_video.mp4'):
         """ Tests the trained agent and creates an MP4 video """

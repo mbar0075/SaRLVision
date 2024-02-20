@@ -41,9 +41,6 @@ class VGG16FeatureExtractor(nn.Module):
 
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x) # Applying the feature extraction part of the model
-        # x = self.adaptive_pooling(x) # Applying the adaptive pooling layer
-        x = torch.flatten(x, 1) # Flattening the output of the model
-        # print(x.shape) # Printing the shape of the output
         return x
     
     
@@ -61,9 +58,6 @@ class ResNet50FeatureExtractor(nn.Module):
     
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x) # Applying the feature extraction part of the model
-        # x = self.adaptive_pooling(x) # Applying the adaptive pooling layer
-        x = torch.flatten(x, 1) # Flattening the output of the model
-        # print(x.shape) # Printing the shape of the output
         return x
     
     
@@ -80,9 +74,6 @@ class MobileNetV2FeatureExtractor(nn.Module):
     
     def forward(self, x):
         x = self.features(x)  # Feature extraction
-        # x = self.adaptive_pooling(x)  # Adaptive pooling
-        x = torch.flatten(x, 1)  # Flatten the output
-        # print(x.shape) # Printing the shape of the output
         return x
             
     
@@ -183,12 +174,16 @@ class DQN(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(ninputs, 1024),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(1024, 512),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(512, 256),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(256, 128),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(128, noutputs)
         )
 

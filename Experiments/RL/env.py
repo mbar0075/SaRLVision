@@ -42,7 +42,7 @@ FEATURE_EXTRACTOR = VGG16FeatureExtractor()
 TARGET_SIZE = VGG16_TARGET_SIZE
 CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
-REWARD_FUNC = iou
+REWARD_FUNC = calculate_best_iou
 ENV_MODE = TRAIN_MODE # 0 for training, 1 for testing
 USE_DATASET = None # Whether to use the dataset or not, or to use the image directly (dataset path)
 DATASET_YEAR = '2007' # Pascal VOC Dataset Year
@@ -117,7 +117,7 @@ class DetectionEnv(Env):
             self.obj_configuration = OBJ_COFIGURATION
 
         if self.use_dataset is not None:
-            if not self.dataset_year != '2007+2012':
+            if self.dataset_year != '2007+2012':
                 # self.dataset_image_index = 0
                 self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset, year=self.dataset_year, image_set=self.dataset_image_set)
             else:
@@ -137,7 +137,7 @@ class DetectionEnv(Env):
 
             # For Evaluation
             if self.env_mode == 1: # Testing mode
-                self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': [], 'confidences': []}
+                self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': {}, 'confidences': {}}
 
             self.extract()
         else:
@@ -318,7 +318,7 @@ class DetectionEnv(Env):
 
         # For Evaluation
         if self.use_dataset is not None:
-            self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': [], 'confidences': []}
+            self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': {}, 'confidences': {}}
         pass
 
     def calculate_reward(self, current_state, previous_state, target_bbox, reward_function=REWARD_FUNC):
@@ -352,7 +352,7 @@ class DetectionEnv(Env):
         # Returning the reward.
         return reward
     
-    def calculate_trigger_reward(self, current_state, target_bbox, reward_function=iou):
+    def calculate_trigger_reward(self, current_state, target_bbox, reward_function=REWARD_FUNC):
         """
             Calculating the reward.
 
@@ -394,8 +394,8 @@ class DetectionEnv(Env):
         features = self.feature_extractor(image.unsqueeze(0).to(device)).squeeze(0)
 
         # Returning the features.
-        return features
-
+        return features.data
+    
     def get_state(self, dtype=FloatDType):
         """
             Getting the state of the environment.
@@ -403,8 +403,17 @@ class DetectionEnv(Env):
             Output:
                 - State of the environment
         """
+        # Extracting current bounding box
+        bbox = self.bbox
+
+        # Extracting current image
+        image = self.image.copy()
+
+        # Cropping the image based on the bounding box
+        image = image[bbox[1]:bbox[3], bbox[0]:bbox[2]]
+
         # Transforming the image.
-        image = transform_input(self.image, target_size=self.target_size)
+        image = transform_input(image, target_size=self.target_size)
 
         # Retrieving the features of the image.
         features = self.get_features(image)
@@ -419,7 +428,7 @@ class DetectionEnv(Env):
         normalised_bbox = [self.bbox[0] / self.width, self.bbox[1] / self.height, self.bbox[2] / self.width, self.bbox[3] / self.height]
 
         # Appending bounding box coordinates to the beginning of the action history.
-        action_history = torch.cat((torch.tensor(normalised_bbox, dtype=dtype).view(1, -1), action_history), 1)
+        # action_history = torch.cat((torch.tensor(normalised_bbox, dtype=dtype).view(1, -1), action_history), 1)
         # action_history = torch.tensor(self.bbox, dtype=dtype).view(1, -1)
 
         # Concatenating the features and the action history (1  is beiing used to specify the dimension along which the tensors are concatenated).
@@ -631,8 +640,9 @@ class DetectionEnv(Env):
             'bbox': self.bbox,
             'feature_extractor': self.feature_extractor,
             'transform': self.transform,
-            'iou': iou(self.bbox, self.target_bbox),
-            'recall': recall(self.bbox, self.target_bbox),
+            'iou': calculate_best_iou([self.bbox], self.current_gt_bboxes),
+            'recall': calculate_best_recall([self.bbox], self.current_gt_bboxes),
+            'gt_bboxes': self.current_gt_bboxes,
             'threshold': self.threshold,
             'classification_dictionary': self.classification_dictionary,
             'env_mode': self.env_mode,
@@ -1019,13 +1029,13 @@ class DetectionEnv(Env):
             current_state = [self.bbox[0], self.bbox[1], self.bbox[2], self.bbox[3]]
 
             # Calculating the reward.
-            reward = self.calculate_reward(current_state, previous_state, self.target_bbox)
+            reward = self.calculate_reward([current_state], [previous_state], self.current_gt_bboxes) #self.target_bbox)
         else:
             # Retrieving the current state.
             current_state = self.bbox
 
             # Calculating the reward.
-            reward = self.calculate_trigger_reward(current_state, self.target_bbox)
+            reward = self.calculate_trigger_reward([current_state], self.current_gt_bboxes) #self.target_bbox)
 
             self.restart_and_change_state()
 
@@ -1058,6 +1068,7 @@ class DetectionEnv(Env):
             # For classification
             if self.env_mode == TEST_MODE: # Testing mode
                 self.get_labels()
+                self.filter_bboxes() # Saving to evaluation results
 
         if self.is_render:
             self.render(self.render_mode)
@@ -1230,7 +1241,7 @@ class DetectionEnv(Env):
                 font_size = int(font_ratio * self.height)  # Calculate the font size
                 font = pygame.font.SysFont('Lato', font_size)#, bold=True) (font_size was 20 before)
 
-                text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)), True, (255, 255, 255))
+                text = font.render('Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(calculate_best_iou([self.bbox], self.current_gt_bboxes), 3)) + ' | Recall: ' + str(round(calculate_best_recall([self.bbox], self.current_gt_bboxes), 3)), True, (255, 255, 255))
                 image_surface.blit(text, (0, self.window_size[1] - font_size))
 
                 # Create font with Lato, size 30
@@ -1296,7 +1307,7 @@ class DetectionEnv(Env):
 
             # Adding Step | Reward | IoU on the RGB array at the bottom left corner
             cv2.putText(rgb_array, 'Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) +
-                        ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)),
+                        ' | IoU: ' + str(round(calculate_best_iou([self.bbox], self.current_gt_bboxes), 3)) + ' | Recall: ' + str(round(calculate_best_recall([self.bbox], self.current_gt_bboxes), 3)),
                         (10, self.window_size[1] - 20), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
             return rgb_array
@@ -1412,7 +1423,7 @@ class DetectionEnv(Env):
 
             # Plotting the image.
             if do_display and mode != 'detection':
-                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)))
+                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(calculate_best_iou([self.bbox], self.current_gt_bboxes), 3)) + ' | Recall: ' + str(round(calculate_best_recall([self.bbox], self.current_gt_bboxes), 3)))
             else:
                 self.plot_img(image, title='Object Detection',figure_size=(10, 7))
             # Returning the image.
@@ -1426,7 +1437,7 @@ class DetectionEnv(Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)))
+                self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(calculate_best_iou([self.bbox], self.current_gt_bboxes), 3)) + ' | Recall: ' + str(round(calculate_best_recall([self.bbox], self.current_gt_bboxes), 3)))
 
             # Returning the image.
             return image
@@ -1442,7 +1453,7 @@ class DetectionEnv(Env):
 
             # Plotting the image.
             if do_display:
-                self.plot_img(heatmap, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(iou(self.bbox, self.target_bbox), 3)) + ' | Recall: ' + str(round(recall(self.bbox, self.target_bbox), 3)))
+                self.plot_img(heatmap, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(calculate_best_iou([self.bbox], self.current_gt_bboxes), 3)) + ' | Recall: ' + str(round(calculate_best_recall([self.bbox], self.current_gt_bboxes), 3)))
 
             # Returning the image.
             return heatmap

@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import math
 import scipy.stats as st
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import operator
 import time
@@ -883,7 +885,7 @@ def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.3):
 
     # Checking if no important ranks were found and returning original image
     if coords.size == 0:
-        return img , most_imp_ranks
+        return img , most_imp_ranks, [0, 0, img.shape[0], img.shape[1]]
 
     # Cropping image based on most important ranks
     x0, y0 = coords.min(axis=0)[:2]
@@ -891,7 +893,7 @@ def resize_based_on_important_ranks(img, sara_info, grid_size, rate=0.3):
     cropped_img = img[x0:x1, y0:y1]
     return cropped_img , most_imp_ranks, [x0, y0, x1, y1]
 
-def sara_resize(img, sara_info, grid_size, rate=0.3, iterations=3):
+def sara_resize(img, sara_info, grid_size, rate=0.3, iterations=2):
     """
         Function to resize an image based on SaRa
 
@@ -912,3 +914,168 @@ def sara_resize(img, sara_info, grid_size, rate=0.3, iterations=3):
 
     # Returning resized image
     return img, most_imp_ranks, coords
+
+def plot_3D(img, sara_info, grid_size, rate=0.3):
+    def generate_segments(image, seg_count) -> dict:
+        """
+            Function to generate segments of an image
+
+            Args:
+                image: input image
+                seg_count: number of segments to generate
+
+            Returns:
+                segments: dictionary of segments
+        
+        """
+        # Initializing segments dictionary
+        segments = {}
+        # Initializing segment index and segment count
+        segment_count = seg_count
+        index = 0
+
+        # Retrieving image width and height
+        h, w = image.shape[:2]
+
+        # Calculating width and height intervals for segments from the segment count
+        w_interval = w // segment_count
+        h_interval = h // segment_count
+
+        # Iterating through the image and generating segments
+        for i in range(segment_count):
+            for j in range(segment_count):
+                # Calculating segment coordinates
+                x1, y1 = j * w_interval, i * h_interval
+                x2, y2 = x1 + w_interval, y1 + h_interval
+
+                # Adding segment coordinates to segments dictionary
+                segments[index] = (x1, y1, x2, y2)
+
+                # Incrementing segment index
+                index += 1
+
+        # Returning segments dictionary
+        return segments
+
+    # Extracting heatmap from SaRa information
+    heatmap = sara_info[0]
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+    
+    # Retrieving important ranks from SaRa
+    sara_dict = {
+        info[0]: {
+            'score': info[2],
+            'index': info[1]
+        }
+        for info in sara_info[1]
+    }
+
+    # Sorting important ranks by score
+    sorted_sara_dict = sorted(sara_dict.items(), key=lambda item: item[1]['score'], reverse=True)
+
+    # Generating segments
+    index_info = generate_segments(img, grid_size)
+
+    # Calculating maximum rank
+    max_rank = int(grid_size * grid_size * rate)
+    count = 0
+
+    # Normalizing heatmap
+    heatmap = heatmap.astype(float) / 255.0
+
+    # Creating a figure
+    fig = plt.figure(figsize=(20, 10))
+
+    # Creating a 3D plot
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Defining the x and y coordinates for the heatmap
+    x_coords = np.linspace(0, 1, heatmap.shape[1])
+    y_coords = np.linspace(0, 1, heatmap.shape[0])
+    x, y = np.meshgrid(x_coords, y_coords)
+
+    # Defining the z-coordinate for the heatmap (a constant, such as -5)
+    z = np.asarray([[-10] * heatmap.shape[1]] * heatmap.shape[0])
+
+    # Plotting the heatmap as a texture on the xy-plane
+    ax.plot_surface(x, y, z, facecolors=heatmap, rstride=1, cstride=1, shade=False)
+
+    # Initializing the single distribution array
+    single_distribution = np.asarray([[1e-6] * heatmap.shape[1]] * heatmap.shape[0], dtype=float)
+
+    importance = 0
+    # Creating the single distribution by summing up Gaussian distributions for each segment
+    for rank, info in sorted_sara_dict:
+        # Retrieving segment coordinates
+        coords = index_info[rank]
+
+        # Creating a Gaussian distribution for the whole segment, i.e., arrange all the pixels in the segment in a 3D Gaussian distribution
+        x_temp = np.linspace(0, 1, coords[2] - coords[0])
+        y_temp = np.linspace(0, 1, coords[3] - coords[1])
+
+        # Creating a meshgrid
+        x_temp, y_temp = np.meshgrid(x_temp, y_temp)
+
+        # Calculating the Gaussian distribution
+        distribution = np.exp(-((x_temp - 0.5) ** 2 + (y_temp - 0.5) ** 2) / 0.1) * ((grid_size ** 2 - importance) / grid_size ** 2) # (constant)
+
+        # Adding the Gaussian distribution to the single distribution
+        single_distribution[coords[1]:coords[3], coords[0]:coords[2]] += distribution
+
+        # Incrementing importance
+        importance +=1
+
+    # Based on the rate, calculating the minimum number for the most important ranks
+    min_rank = int(grid_size * grid_size * rate)
+
+    # Calculating the scale factor for the single distribution
+    scale_factor = ((grid_size ** 2 - min_rank) / grid_size ** 2) * 5
+
+    # Scaling the distribution
+    single_distribution *= scale_factor
+
+    # Retrieving the max and min values of the single distribution
+    max_value = np.max(single_distribution)
+    min_value = np.min(single_distribution)
+
+    # Calculating the hyperplane
+    hyperplane = np.asarray([[(max_value - min_value)* (1 - rate) + min_value] * heatmap.shape[1]] * heatmap.shape[0])
+
+    # Plotting a horizontal plane at the minimum rank level (hyperplane)
+    ax.plot_surface(x, y, hyperplane, rstride=1, cstride=1, color='red', alpha=0.3, shade=False)
+
+    # Plotting the single distribution as a wireframe on the xy-plane
+    ax.plot_surface(x, y, single_distribution, rstride=1, cstride=1, color='blue', shade=False)
+
+    # Setting the title
+    ax.set_title('SaRa 3D Heatmap Plot', fontsize=20)
+
+    # Setting the labels
+    ax.set_xlabel('X', fontsize=16)
+    ax.set_ylabel('Y', fontsize=16)
+    ax.set_zlabel('Z', fontsize=16)
+
+    # Setting the viewing angle to look from the y, x diagonal position
+    ax.view_init(elev=30, azim=45)  # Adjust the elevation (elev) and azimuth (azim) angles as needed
+    # ax.view_init(elev=0, azim=0) # View from the top
+
+    # Adding legend to the plot
+    # Creating Line2D objects for the legend
+    legend_elements = [Line2D([0], [0], color='blue', lw=4, label='Rank Distribution'),
+                    Line2D([0], [0], color='red', lw=4, label='Hyperplane Threshold'),
+                    Line2D([0], [0], color='green', lw=4, label='SaRa Heatmap')]
+
+    # Creating the legend
+    plt.subplots_adjust(right=0.5)
+    ax.legend(handles=legend_elements, fontsize=16, loc='center left', bbox_to_anchor=(1, 0.5))
+
+    # Inverting the x axis
+    ax.invert_xaxis()
+
+    # Removing labels
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+
+    # Showing the plot
+    plt.show()
