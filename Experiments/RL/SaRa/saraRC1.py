@@ -1062,7 +1062,7 @@ def plot_3D(img, sara_info, grid_size, rate=0.3):
     # Adding legend to the plot
     # Creating Line2D objects for the legend
     legend_elements = [Line2D([0], [0], color='blue', lw=4, label='Rank Distribution'),
-                    Line2D([0], [0], color='red', lw=4, label='Hyperplane Threshold'),
+                    Line2D([0], [0], color='red', lw=4, label='Threshold Hyperplane ({}%)'.format(rate*100)),
                     Line2D([0], [0], color='green', lw=4, label='SaRa Heatmap')]
 
     # Creating the legend

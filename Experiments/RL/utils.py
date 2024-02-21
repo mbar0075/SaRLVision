@@ -34,7 +34,7 @@ ALPHA = 1e-4
 # Gamma refers to the discount factor γ ∈ [0, 1]. It quantifies how much importance is given to future rewards.
 GAMMA = 0.99
 # The batch size is the number of training examples used in one iteration (that is, one gradient update) of training.
-BATCH_SIZE = 512#256
+BATCH_SIZE = 128
 # The buffer size is the number of transitions stored in the replay buffer, which the agent samples from to learn.
 BUFFER_SIZE = 10000
 # The minimum replay size is the minimum number of transitions that need to be stored in the replay buffer before the agent starts learning.
@@ -347,48 +347,48 @@ def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     # Returning the precision, recall, f1 score, average IoU and average precision
     return precision, recall, f1_score, avg_iou, avg_precision
 
-def voc_ap(rec, prec, voc2007=True):
+def voc_ap(rec, prec, voc2007=False):
     """
     Calculating the Average Precision (AP) and Recall.
 
-    Args:
-        rec: Array of recall values.
-        prec: Array of precision values.
-        voc2007: Boolean flag indicating whether to use the method recommended by the PASCAL VOC 2007 paper (11-point method).
+        Args:
+            rec: Array of recall values.
+            prec: Array of precision values.
+            voc2007: Boolean flag indicating whether to use the method recommended by the PASCAL VOC 2007 paper (11-point method).
 
-    Returns:
-        The average precision (AP) = 1/11 * ∑ (r_n - r_{n-1}) * p_n
+        Returns:
+            The average precision (AP).
 
-    More information:
-    - If voc2007 is True, then the method recommended by the PASCAL VOC 2007 paper (11-point method) is used.
-    - The average precision is calculated by integrating the precision-recall curve.
-    - The precision-recall curve is constructed by interpolating the precision values at different recall levels.
-    - The AP is the area under the precision-recall curve.
+        More information:
+        - If voc2007 is True, then the method recommended by the PASCAL VOC 2007 paper (11-point method) is used.
+        - If voc2007 is False, then the method recommended by the PASCAL VOC 2010 paper is used.
     """
+    # Ensuring inputs are numpy arrays
+    rec = np.array(rec)
+    prec = np.array(prec)
+
     if voc2007:
+        # PASCAL VOC 2007 11-point method
         ap = 0.0
-        # 11-point method recommended by the PASCAL VOC 2007 paper
         for t in np.arange(0.0, 1.1, 0.1):
-            # If the recall is greater than the threshold, then the interpolated precision is the maximum precision at a recall level greater than the threshold
-            if np.sum(rec >= t) == 0:
-                p = 0
-            else:
-                p = np.max(prec[rec >= t])
-            # Summing the interpolated precision
-            ap = ap + p / 11.0  # Calculate AP using the 11-point method
+            # Finding the maximum precision at recall levels greater than or equal to the threshold
+            p = np.max(prec[rec >= t]) if np.sum(rec >= t) > 0 else 0
+            # Calculating AP using the 11-point method
+            ap += p / 11.0
     else:
-        # If voc2007 is False, then the method recommended by the PASCAL VOC 2010 paper is used
-        # The precision-recall curve is constructed by interpolating the precision values at different recall levels
+        # PASCAL VOC 2010 method
+        # Concatenating arrays with 0 and 1 to ensure that precision is interpolated correctly
         mrec = np.concatenate(([0.0], rec, [1.0]))
         mpre = np.concatenate(([0.0], prec, [0.0]))
 
-        # Interpolating the precision at different recall levels by taking the maximum precision at a recall level greater than the current recall level
+        # Interpolating precision at different recall levels by taking the maximum precision at a recall level greater than the current recall level
         for i in range(mpre.size - 1, 0, -1):
             mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
 
         # Calculating the average precision by integrating the precision-recall curve
         i = np.where(mrec[1:] != mrec[:-1])[0]
-        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # Calculate AP by integrating the precision-recall curve
+        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
+
     return ap
 
 def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, ovthresh):
@@ -411,65 +411,67 @@ def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, o
     ap = voc_ap(rec, prec)
 
     # Returning all the metrics in a dictionary
-    return {"class": current_class, "precision": prec, "recall": rec, "f1_score": f1_score, "average_iou": avg_iou, "average_precision": avg_precision, "average_precision_voc": ap, "iou_threshold": ovthresh, "num_images": len(bounding_boxes)}
+    return {"class": current_class, "average_iou": avg_iou, "average_precision": avg_precision, "average_precision_voc": ap, "iou_threshold": ovthresh, "num_images": len(bounding_boxes)}, {"precision": prec, "recall": rec, "f1_score": f1_score,}
 
-def plot_precision_recall_curve_for_all_classes(dfs, title="Precision-Recall Curve", save_path=None, figsize=(20, 10)):
+# def plot_precision_recall_curve_for_all_classes(pre_rec_f1, title="Precision-Recall Curve", save_path=None, figsize=(20, 10)):
+#     """
+#         Plotting the precision-recall curve for all the classes.
+
+#         Args:
+#             pre_rec_f1: The dataframe containing the precision, recall, and F1-score for each class.
+#             title: The title of the plot.
+#             save_path: The path to save the plot.
+
+#         Returns:
+#             None
+#     """
+#     # Initializing the figure
+#     plt.figure(figsize=figsize)
+
+#     # Using the seaborn style
+#     plt.style.use("seaborn")
+
+#     # Iterating through the unique classes in pre_rec_f1
+#     for current_class in pre_rec_f1['class'].unique():
+#         # Selecting the rows for the current class
+#         df = pre_rec_f1[pre_rec_f1['class'] == current_class]
+
+#         # Retrieving the precision and recall
+#         precision = df["precision"].values
+#         recall = df["recall"].values
+
+#         # Plotting the precision-recall curve
+#         plt.plot(recall, precision, label=f"{current_class}")
+
+#     # Setting the title and labels
+#     plt.title(title)
+#     plt.xlabel("Recall")
+#     plt.ylabel("Precision")
+
+#     # Setting the legend
+#     plt.legend()
+
+#     plt.tight_layout()
+
+#     # Saving the plot if a save path is provided
+#     if save_path is not None:
+#         plt.savefig(save_path)
+
+#     # Showing the plot
+#     plt.show()
+
+def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.5]): # list(np.arange(0.5, 0.95, 0.05))):
     """
-        Plotting the precision-recall curve for all the classes.
+    Calculating the detection metrics for all the classes.
 
         Args:
-            dfs: The list of dataframes containing the detection metrics for each class at given IoU thresholds.
-            title: The title of the plot.
-            save_path: The path to save the plot.
+            results_path: Path to the directory containing detection results.
+            threshold_list: List of IoU thresholds to evaluate detection metrics.
 
         Returns:
-            None
-    """
-    # Initializing the figure
-    plt.figure(figsize=figsize)
-
-    # Using the seaborn style
-    plt.style.use("seaborn")
-
-    # Iterating through the dataframes
-    for df in dfs:
-        # Retrieving the class
-        current_class = df["class"].values[0]
-
-        # Retrieving the precision and recall
-        precision = df["precision"].values[0]
-        recall = df["recall"].values[0]
-
-        # Plotting the precision-recall curve
-        plt.plot(recall, precision, label=f"{current_class}")
-
-    # Setting the title and labels
-    plt.title(title)
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-
-    # Setting the legend
-    plt.legend()
-
-    plt.tight_layout()
-
-    # Saving the plot if a save path is provided
-    if save_path is not None:
-        plt.savefig(save_path)
-
-    # Showing the plot
-    plt.show()
-
-def calculate_detection_metrics(results_path, threshold_list=np.arange(0.5, 1.0, 0.05)):
-    """
-        Calculating the detection metrics for all the classes.
-
-        Args:
-            results: The results of the detection.
-
-        Returns:
-            An array of pandas dataframes containing the detection metrics for each class at given IoU thresholds.
+            dfs: An array of pandas dataframes containing the detection metrics for each class at given IoU thresholds.
             mAps: The mean average precision for each class at given IoU thresholds.
+            pre_rec_f1: Precision, recall, and F1-score for each class at given IoU thresholds.
     """
     # Declaring the results dictionary
     results = {}
@@ -486,20 +488,22 @@ def calculate_detection_metrics(results_path, threshold_list=np.arange(0.5, 1.0,
         results[current_class] = current_results
 
     # Retrieving the classes
-    classes = results.keys()
+    classes = list(results.keys())
 
     # Initializing list of dataframes to store the detection metrics for each class and mean average precision
     dfs = []
     mAps = {}
+    pre_rec_f1 = {}
 
     # Iterating through the threshold values
     for ovthresh in threshold_list:
-
         # Storing the average precision for each class at given IoU thresholds
         aps = {}
 
-        # Creating a dataframe to store the detection metrics for each threshold
-        df = pd.DataFrame(columns=["class", "precision", "recall", "f1_score", "average_iou", "average_precision", "average_precision_voc", "iou_threshold", "num_images"])
+        pre_rec_f1[ovthresh] = {}
+
+        # Creating a dictionary to store the detection metrics
+        detection_metrics_dict = {}
 
         # Iterating through the classes
         for current_class in classes:
@@ -508,10 +512,10 @@ def calculate_detection_metrics(results_path, threshold_list=np.arange(0.5, 1.0,
             gt_boxes = results[current_class]["gt_boxes"]
 
             # Calculating the detection metrics
-            detection_metrics = calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, ovthresh)
-            print(detection_metrics)
-            # Adding the detection metrics to the dataframe
-            df = df.append(pd.DataFrame(detection_metrics), ignore_index=True)
+            detection_metrics, pre_rec_f1[ovthresh][current_class] = calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, ovthresh)
+
+            # Adding the detection metrics to the detection metrics dictionary
+            detection_metrics_dict[current_class] = detection_metrics
 
             # Storing the average precision for each class at given IoU thresholds
             aps[current_class] = detection_metrics["average_precision_voc"]
@@ -519,11 +523,30 @@ def calculate_detection_metrics(results_path, threshold_list=np.arange(0.5, 1.0,
         # Calculating the mean average precision for each class at given IoU thresholds
         mAps[ovthresh] = np.mean(list(aps.values()))
 
-        # Appending the DataFrame to the list of DataFrames
+        # Transforming the detection metrics dictionary into a dataframe
+        df = pd.DataFrame(detection_metrics_dict).T
+
+        # Removing class column
+        df = df.drop(columns=["class"])
+
+        print(df)
         dfs.append(df)
 
-    # Plotting the precision-recall curve for all the classes
-    plot_precision_recall_curve_for_all_classes(dfs, title="Precision-Recall Curve", save_path="precision_recall_curve.png")
+    # If save_path is provided, save the results
+    if save_path is not None:
+        # If directory does not exist, create it
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        # Saving the results in a csv file
+        for i, df in enumerate(dfs):
+            df.to_csv(os.path.join(save_path, f"detection_metrics_{threshold_list[i]}.csv"))
+
+        # Saving the mean average precision in a csv file
+        with open(os.path.join(save_path, "mean_average_precision.csv"), "w") as f:
+            for key in mAps.keys():
+                f.write("%s,%s\n"%(key,mAps[key]))
 
     # Returning the list of dataframes and the mean average precision
     return dfs, mAps
+

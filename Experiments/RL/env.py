@@ -122,6 +122,7 @@ class DetectionEnv(Env):
                 self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset, year=self.dataset_year, image_set=self.dataset_image_set)
             else:
                 self.dataset = self.load_training_dataset(path=self.use_dataset, image_set=self.dataset_image_set)
+            self.class_image_index = 0 # Resetting due to reset
 
             # Extracting the current class
             if 'current_class' in env_config:
