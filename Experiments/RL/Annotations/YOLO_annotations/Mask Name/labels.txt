@@ -1,1 +1,1 @@
-tiger_cat 0
+Egyptian_cat 0
