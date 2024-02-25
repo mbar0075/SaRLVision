@@ -14,4 +14,5 @@ from gymnasium.envs.registration import register
 register(
     id='DetectionEnv-v0',
     entry_point='SaRLVision.env:DetectionEnv',
+    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'train', 'dataset_year': '2007+2012'}} # Training environment
 )

@@ -1,1 +1,1 @@
-Egyptian_cat 0
+Persian_cat 0

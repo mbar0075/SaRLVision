@@ -56,7 +56,7 @@ CLASSIFIER = ResNet50V2()
 CLASSIFIER_TARGET_SIZE = RESNET50_TARGET_SIZE
 REWARD_FUNC = calculate_best_iou
 ENV_MODE = TRAIN_MODE # 0 for training, 1 for testing
-USE_DATASET = None # Whether to use the dataset or not, or to use the image directly (dataset path)
+USE_DATASET = 'PascalVOC2007_2012Dataset'# None # Whether to use the dataset or not, or to use the image directly (dataset path)
 DATASET_YEAR = '2007' # Pascal VOC Dataset Year
 DATASET_IMAGE_SET = 'train'
 SINGLE_OBJ = 0 # Whether to use single object or not
@@ -369,7 +369,7 @@ class DetectionEnv(Env):
         # Enabling binary reward in the range of {-1, 1}
         if reward > 0:
             reward = 1
-        elif reward < 0:
+        elif reward <= 0: # Including the equal to zero case as to mitigate redundant actions such continuing to maximise the bounding box
             reward = -1
 
         # Returning the reward.
