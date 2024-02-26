@@ -64,7 +64,7 @@ class DQNAgent():
         self.replay_buffer = replay_buffer
         self.target_update_freq = target_update_freq
         self.exploration_mode = exploration_mode
-        self.ninputs = env.observation_space.shape[0]
+        self.ninputs = env.get_state().shape[1]
         self.noutputs = env.action_space.n
         self.policy_net = network(self.ninputs, self.noutputs).to(device)
         self.target_net = network(self.ninputs, self.noutputs).to(device)
@@ -345,17 +345,21 @@ class DQNAgent():
 
     def test(self, file_path='dqn_render',video_filename='output_video.mp4'):
         """ Tests the trained agent and creates an MP4 video """
+        # Removing the file if it exists
+        if os.path.exists(os.path.join(file_path, video_filename)):
+            os.remove(os.path.join(file_path, video_filename))
+
         # OpenCV video settings
-        
         width = self.env.width
         height = self.env.height
+
         # Creating path if it does not exist
         if not os.path.exists(file_path):
             os.makedirs(file_path)
 
         # Appending the file name to the path
         video_filename = os.path.join(file_path, video_filename)
-        video_writer = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*'mp4v'), 3, (width, height))# 5 fps, lower is better
+        video_writer = cv2.VideoWriter(video_filename, cv2.VideoWriter_fourcc(*'avc1'), 1, (width, height))# 5 fps, lower is better
 
         # Resetting the environment
         obs, _ = self.env.reset()
@@ -380,14 +384,14 @@ class DQNAgent():
             if terminated or truncated:
                 break
 
-        # Add final frame
+        # Adding final frame
         frames.append(self.env.render())# Final frame with label
 
-        # Save frames to video
+        # Saving frames to video
         for frame in frames:
             video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         
-        # Release video writer
+        # Releasing video writer
         video_writer.release()
         print('\033[92mVideo saved to:\033[0m {}'.format(video_filename))
 
@@ -423,14 +427,27 @@ class DQNAgent():
             if terminated or truncated:
                 break
 
-        # Add final frame
+        # Adding final frame
         frames.append(self.env.render())  # Final frame with label
 
-        # Looping through the frames and resizing them based on FRAME_SIZE
         for i in range(len(frames)):
-            frames[i] = cv2.resize(frames[i], FRAME_SIZE)
+            original_height, original_width = frames[i].shape[:2]
+            aspect_ratio = original_width / original_height
 
-        # Save frames as GIF
+            # Assuming FRAME_SIZE is a tuple (new_width, new_height)
+            new_width, new_height = FRAME_SIZE
+
+            # If the original aspect ratio is greater than the new aspect ratio
+            # it means the original width is greater than the original height.
+            # So, we should set the new width based on the new height.
+            if aspect_ratio > new_width / new_height:
+                new_width = int(new_height * aspect_ratio)
+            else:
+                new_height = int(new_width / aspect_ratio)
+
+            frames[i] = cv2.resize(frames[i], (new_width, new_height))
+
+        # Saving frames as GIF
         imageio.mimsave(gif_filename, frames, duration=10)  # duration in seconds per frame
 
         print('\033[92mGIF saved to:\033[0m {}'.format(gif_filename))

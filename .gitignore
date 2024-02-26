@@ -164,6 +164,7 @@ PascalVOC2007_2012Dataset/
 *.avi
 # *.mp4
 output_video.mp4
+output.gif
 
 # model files
 Experiments/RL/models/

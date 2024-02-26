@@ -40,7 +40,7 @@ BoolDType = torch.bool
 # The path to the directory containing the saved models
 SAVE_MODEL_PATH = "models/"
 # Frame size for gif
-FRAME_SIZE = (480, 360)
+FRAME_SIZE = (480 * 2, 360 * 2)
 # The learning rate α ∈ (0, 1] controls how much we update our current value estimates towards newly received returns.
 ALPHA = 1e-4
 # Gamma refers to the discount factor γ ∈ [0, 1]. It quantifies how much importance is given to future rewards.

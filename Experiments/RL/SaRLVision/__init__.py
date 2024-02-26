@@ -12,7 +12,25 @@ from gymnasium.envs.registration import register
 
 # Registering the environment
 register(
-    id='DetectionEnv-v0',
+    id='DetectionEnv-v0-Train',
     entry_point='SaRLVision.env:DetectionEnv',
     kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'train', 'dataset_year': '2007+2012'}} # Training environment
+)
+
+register(
+    id='DetectionEnv-v0-Test',
+    entry_point='SaRLVision.env:DetectionEnv',
+    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007'}} # Testing environment
+)
+
+register(
+    id='DetectionEnv-v0-Val',
+    entry_point='SaRLVision.env:DetectionEnv',
+    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'val', 'dataset_year': '2007'}} # Validation environment
+)
+
+register(
+    id='DetectionEnv-v0-View',
+    entry_point='SaRLVision.env:DetectionEnv',
+    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007'}} # Testing environment
 )

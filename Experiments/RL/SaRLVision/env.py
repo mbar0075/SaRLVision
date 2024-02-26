@@ -62,6 +62,7 @@ DATASET_IMAGE_SET = 'train'
 SINGLE_OBJ = 0 # Whether to use single object or not
 MULTI_OBJ = 1 # Whether to use multiple objects or not
 OBJ_COFIGURATION = SINGLE_OBJ # Configuration of the objects
+ALLOW_CLASSIFICATION = True # Whether to allow classification or not
 
 
 class DetectionEnv(Env):
@@ -134,7 +135,6 @@ class DetectionEnv(Env):
                 self.dataset = self.load_pascal_voc_dataset(path=self.use_dataset, year=self.dataset_year, image_set=self.dataset_image_set)
             else:
                 self.dataset = self.load_training_dataset(path=self.use_dataset, image_set=self.dataset_image_set)
-            self.class_image_index = 0 # Resetting due to reset
 
             # Extracting the current class
             if 'current_class' in env_config:
@@ -153,6 +153,7 @@ class DetectionEnv(Env):
                 self.evaluation_results = {'class': self.current_class, 'gt_boxes': {}, 'bounding_boxes': {}, 'total_images': len(self.dataset[self.current_class]), 'labels': {}, 'confidences': {}}
 
             self.extract()
+            self.class_image_index -= 1# Since the first image is already extracted
         else:
             # Initializing image, the original image which will be used as a visualisation, the target bounding box, the height and the width of the image.
             if 'image' not in env_config:
@@ -279,6 +280,12 @@ class DetectionEnv(Env):
             del env_config['classifier']
         else:
             self.classifier = CLASSIFIER
+
+        if 'allow_classification' in env_config:
+            self.allow_classification = env_config['allow_classification']
+            del env_config['allow_classification']
+        else:
+            self.allow_classification = ALLOW_CLASSIFICATION
         
         if 'classifier_target_size' in env_config:
             self.classifier_target_size = env_config['classifier_target_size']
@@ -335,8 +342,9 @@ class DetectionEnv(Env):
             Function that sets the environment mode to testing.
         """
         self.env_mode = TEST_MODE
+        self.allow_classification = True
 
-        if self.classification_dictionary['bbox'] != []:
+        if self.classification_dictionary['label'] == [] and self.classification_dictionary['bbox'] != []:
             self.get_labels()
 
         # For Evaluation
@@ -1093,7 +1101,7 @@ class DetectionEnv(Env):
             #     self.bbox = self.best_bbox # Set the bounding box to the best bounding box (Model checkpoint)
 
             # For classification
-            if self.env_mode == TEST_MODE: # Testing mode
+            if self.allow_classification and self.classification_dictionary['label']==[]:
                 self.get_labels()
                 self.filter_bboxes() # Saving to evaluation results
 
@@ -1196,10 +1204,11 @@ class DetectionEnv(Env):
 
             if mode != 'trigger_image':
                 # Iterating through the classification dictionary (for bounding boxes)
-                for label_idx in range(len(self.classification_dictionary['label'])):
+                for label_idx in range(len(self.classification_dictionary['bbox'])):
                     # Retrieving the label and the confidence and the bounding box
-                    label = self.classification_dictionary['label'][label_idx]
-                    label_confidence = self.classification_dictionary['confidence'][label_idx]
+                    if self.allow_classification and self.classification_dictionary['label']:
+                        label = self.classification_dictionary['label'][label_idx]
+                        label_confidence = self.classification_dictionary['confidence'][label_idx]
                     predicted_bbox = self.classification_dictionary['bbox'][label_idx]
                     # Extracting coordinates
                     x1, y1, x2, y2 = predicted_bbox
@@ -1214,41 +1223,41 @@ class DetectionEnv(Env):
                     cv2.rectangle(img, (predicted_bbox[0], predicted_bbox[1]), (predicted_bbox[2], predicted_bbox[3]), self.color, 3)
 
             # Adding the label to the image
-            # if text_display and self.classification_dictionary['label'] and (self.truncated or self.terminated):
-            #     # Setting the font and the font scale
-            #     font = cv2.FONT_HERSHEY_SIMPLEX
-            #     font_scale = 1.2
+            if text_display and self.classification_dictionary['label'] and (self.truncated or self.terminated) and self.allow_classification:
+                # Setting the font and the font scale
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.2
 
-            #     # Iterating through the classification dictionary (for text)
-            #     for label_idx in range(len(self.classification_dictionary['label'])):
-            #         # Retrieving the label and the confidence and the bounding box
-            #         label = self.classification_dictionary['label'][label_idx]
-            #         label_confidence = self.classification_dictionary['confidence'][label_idx]
-            #         predicted_bbox = self.classification_dictionary['bbox'][label_idx]
-            #         # Extracting coordinates
-            #         x1, y1, x2, y2 = predicted_bbox
+                # Iterating through the classification dictionary (for text)
+                for label_idx in range(len(self.classification_dictionary['label'])):
+                    # Retrieving the label and the confidence and the bounding box
+                    label = self.classification_dictionary['label'][label_idx]
+                    label_confidence = self.classification_dictionary['confidence'][label_idx]
+                    predicted_bbox = self.classification_dictionary['bbox'][label_idx]
+                    # Extracting coordinates
+                    x1, y1, x2, y2 = predicted_bbox
 
-            #         # Creating the label text
-            #         text = str(label.capitalize()) + '  ' + str(round(label_confidence, 2))
+                    # Creating the label text
+                    text = str(label.capitalize()) + '  ' + str(round(label_confidence, 2))
 
-            #         # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
-            #         (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
+                    # Drawing the label on the image, whilst ensuring that it doesn't go out of bounds
+                    (label_width, label_height), baseline = cv2.getTextSize(text, font, font_scale, 2)
 
-            #         # Ensuring that the label doesn't go out of bounds
-            #         if y1 - label_height - baseline < 0:
-            #             y1 = label_height + baseline
-            #         if x1 + label_width > img.shape[1]:
-            #             x1 = img.shape[1] - label_width
-            #         if y1 + label_height + baseline > img.shape[0]:
-            #             y1 = img.shape[0] - label_height - baseline
-            #         if x1 < 0:
-            #             x1 = 0
+                    # Ensuring that the label doesn't go out of bounds
+                    if y1 - label_height - baseline < 0:
+                        y1 = label_height + baseline
+                    if x1 + label_width > img.shape[1]:
+                        x1 = img.shape[1] - label_width
+                    if y1 + label_height + baseline > img.shape[0]:
+                        y1 = img.shape[0] - label_height - baseline
+                    if x1 < 0:
+                        x1 = 0
 
-            #         # Creating a filled rectangle for the label background
-            #         cv2.rectangle(img, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
+                    # Creating a filled rectangle for the label background
+                    cv2.rectangle(img, (x1, y1 - label_height - baseline), (x1 + label_width, y1), self.color, -1)
 
-            #         # Adding the label text to the image
-            #         cv2.putText(img, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
+                    # Adding the label text to the image
+                    cv2.putText(img, text, (x1, y1 - 5), font, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
 
             image_surface = pygame.surfarray.make_surface(np.swapaxes(img, 0, 1))
 
@@ -1992,3 +2001,16 @@ class DetectionEnv(Env):
         _ , _, sara_bbox = sara.sara_resize(self.image.copy(), sara_info, GRID_SIZE, rate=threshold, iterations=iterations)
 
         return sara_bbox
+    
+    def plot_sara(self, threshold=0.3):
+        """
+            Function that plots the Saliency Ranking algorithm.
+
+        """
+        # Creating a copy of the original image
+        image = self.image.copy()
+
+        # SaRa algorithm
+        sara_info = sara.return_sara(image, GRID_SIZE, generator, mode=2)
+
+        sara.plot_3D(self.image.copy(), sara_info, GRID_SIZE, rate=threshold)
