@@ -19,7 +19,7 @@ from torchvision.models import vgg16, VGG16_Weights, resnet50, ResNet50_Weights,
 from keras.applications.vgg16 import VGG16, decode_predictions, preprocess_input
 from keras.applications.resnet_v2 import ResNet50V2, decode_predictions, preprocess_input
 from keras.applications.mobilenet_v2 import MobileNetV2, decode_predictions, preprocess_input
-from keras.applications.efficientnet_v2 import EfficientNetV2, decode_predictions, preprocess_input
+from keras.applications.efficientnet_v2 import EfficientNetV2B3, decode_predictions, preprocess_input
 from keras.applications.xception import Xception, decode_predictions, preprocess_input
 from keras.applications.inception_v3 import InceptionV3, decode_predictions, preprocess_input
 
@@ -47,11 +47,12 @@ class VGG16FeatureExtractor(nn.Module):
         super(VGG16FeatureExtractor, self).__init__()
         self.vgg16_model = vgg16(weights=VGG16_Weights.DEFAULT).to(device) # Loading the pretrained model
         self.vgg16_model.eval() # Setting the model in evaluation mode to not do dropout.
-        self.features = list(self.vgg16_model.children())[0] # Retrieving the first child of the model, which is typically the image feature extraction part of the model
-        self.classifier = nn.Sequential(*list(self.vgg16_model.classifier.children())[:-2]) # Retrieving the image feature extraction part of the model, and removing the last two layers, which are typically the dropout and the last layer of the model
+        self.features = self.vgg16_model.features  # Retrieving the feature extraction part of the model
+        self.pooling = nn.AdaptiveAvgPool2d((1, 1))  # Adding a global average pooling layer
 
     def forward(self, x):# Forwarding the input through the model
-        x = self.features(x) # Applying the image feature extraction part of the model
+        x = self.features(x)  # Applying the feature extraction part of the model
+        x = self.pooling(x)  # Applying the global average pooling
         return x
     
     
@@ -63,10 +64,12 @@ class ResNet50FeatureExtractor(nn.Module):
         super(ResNet50FeatureExtractor, self).__init__()
         self.resnet50_model = resnet50(weights=ResNet50_Weights.DEFAULT).to(device) # Loading the pretrained model
         self.resnet50_model.eval() # Setting the model in evaluation mode to not do dropout.
-        self.features = nn.Sequential(*list(self.resnet50_model.children())[:-1])# Retrieving the image feature extraction part of the model, and removing the last layer of the model
+        self.features = nn.Sequential(*list(self.resnet50_model.children())[:-2])# Retrieving the image feature extraction part of the model (excluding the last two layers which are the average pooling and the fully connected layer)
+        self.pooling = nn.AdaptiveAvgPool2d((1, 1))  # Adding a global average pooling layer
 
     def forward(self, x):# Forwarding the input through the model
         x = self.features(x) # Applying the image feature extraction part of the model
+        x = self.pooling(x)
         return x
     
     
@@ -76,12 +79,14 @@ class ResNet50FeatureExtractor(nn.Module):
 class MobileNetV2FeatureExtractor(nn.Module):
     def __init__(self):
         super(MobileNetV2FeatureExtractor, self).__init__()
-        self.mobilenetv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).to(device) # Loading the pretrained model
+        self.mobilenetv2 = mobilenet_v2(pretrained=True).to(device) # Loading the pretrained model
         self.mobilenetv2.eval() # Setting the model in evaluation mode to not do dropout.
-        self.features = self.mobilenetv2.features  # Retrieving the first child of the model, which is typically the image feature extraction part of the model
-    
+        self.features = self.mobilenetv2.features  # Retrieving the feature extraction part of the model
+        self.pooling = nn.AdaptiveAvgPool2d((1, 1))  # Adding a global average pooling layer
+
     def forward(self, x):# Forwarding the input through the model
-        x = self.features(x)  # Applying the image feature extraction part of the model
+        x = self.features(x)  # Applying the feature extraction part of the model
+        x = self.pooling(x)  # Applying the global average pooling
         return x
 
 
@@ -173,12 +178,17 @@ class DuelingDQN(nn.Module):
     Layers:
         1. Linear layer with ninputs neurons
         2. ReLU activation function
-        3. Linear layer with 1024 neurons
-        4. ReLU activation function
-        5. Linear layer with 512 neurons
-        6. ReLU activation function
-        7. Linear layer with 256 neurons
+        3. Dropout layer with 0.2 dropout rate
+        4. Linear layer with 1024 neurons
+        5. ReLU activation function
+        6. Dropout layer with 0.2 dropout rate
+        7. Linear layer with 512 neurons
         8. ReLU activation function
+        9. Dropout layer with 0.2 dropout rate
+        10. Linear layer with 256 neurons
+        11. ReLU activation function
+        12. Dropout layer with 0.2 dropout rate
+        13. Linear layer with 128 neurons
         
     Value Function:
         1. Linear layer with 128 neurons
@@ -196,10 +206,13 @@ class DuelingDQN(nn.Module):
         self.shared_layers = nn.Sequential(
             nn.Linear(ninputs, 1024),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(1024, 512),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(512, 256),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(256, 128),
             nn.ReLU()
         )

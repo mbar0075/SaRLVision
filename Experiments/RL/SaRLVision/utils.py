@@ -44,7 +44,7 @@ FRAME_SIZE = (480 * 2, 360 * 2)
 # The learning rate α ∈ (0, 1] controls how much we update our current value estimates towards newly received returns.
 ALPHA = 1e-4
 # Gamma refers to the discount factor γ ∈ [0, 1]. It quantifies how much importance is given to future rewards.
-GAMMA = 0.99
+GAMMA = 0.9
 # The batch size is the number of training examples used in one iteration (that is, one gradient update) of training.
 BATCH_SIZE = 128
 # The buffer size is the number of transitions stored in the replay buffer, which the agent samples from to learn.
