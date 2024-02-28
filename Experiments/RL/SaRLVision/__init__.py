@@ -10,7 +10,13 @@
 #-------------------------------------------------------------------------------
 from gymnasium.envs.registration import register
 
-# Registering the environment
+# Registering the environments
+register(
+    id='DetectionEnv-v0',
+    entry_point='SaRLVision.env:DetectionEnv',
+    kwargs={"env_config": {'dataset': None}} # Normal environment (for spcifi single image input)
+)
+
 register(
     id='DetectionEnv-v0-Train',
     entry_point='SaRLVision.env:DetectionEnv',
@@ -32,5 +38,5 @@ register(
 register(
     id='DetectionEnv-v0-View',
     entry_point='SaRLVision.env:DetectionEnv',
-    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007'}} # Testing environment
+    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007', 'render_mode': "human"}} # Display environment
 )

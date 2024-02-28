@@ -183,6 +183,10 @@ class DQNAgent():
 
     def train(self):
         """ Trains the agent for nsteps steps """
+        # Setting networks to training mode
+        self.policy_net.train()
+        self.target_net.train()
+
         # Resetting the environment
         obs, _ = self.env.reset()
 
@@ -311,6 +315,10 @@ class DQNAgent():
 
     def evaluate(self, path="evaluation_results"):
         """ Evaluates the agent """
+        # Setting networks to evaluation mode
+        self.policy_net.eval()
+        self.target_net.eval()
+
         # Resetting the environment
         obs, _ = self.env.reset()
 
@@ -345,6 +353,10 @@ class DQNAgent():
 
     def test(self, file_path='dqn_render',video_filename='output_video.mp4'):
         """ Tests the trained agent and creates an MP4 video """
+        # Setting networks to evaluation mode
+        self.policy_net.eval()
+        self.target_net.eval()
+
         # Removing the file if it exists
         if os.path.exists(os.path.join(file_path, video_filename)):
             os.remove(os.path.join(file_path, video_filename))
@@ -366,7 +378,10 @@ class DQNAgent():
 
         # Collecting frames for video creation
         frames = []
-        frames.append(self.env.render())# Initial frame
+        if self.env.render_mode != None:
+            frames.append(self.env.render())# Initial frame
+        else:
+            frames.append(self.env.display(mode='trigger_image'))# Initial frame
 
         # Playing the environment
         while True:
@@ -376,16 +391,22 @@ class DQNAgent():
             # Taking a step in the environment
             obs, _, terminated, truncated, _ = self.env.step(action)
 
-            # Render the frame
-            frame = self.env.render()
-            frames.append(frame)
+            # Rendering the frame
+            self.env.test()
+            if self.env.render_mode != None:
+                frames.append(self.env.render())
+            else:
+                frames.append(self.env.display(mode='trigger_image'))
 
             # Setting done to terminated or truncated
             if terminated or truncated:
                 break
 
         # Adding final frame
-        frames.append(self.env.render())# Final frame with label
+        if self.env.render_mode != None:
+            frames.append(self.env.render())
+        else:
+            frames.append(self.env.predict(do_display=False))# Final frame with label
 
         # Saving frames to video
         for frame in frames:
@@ -397,6 +418,10 @@ class DQNAgent():
 
     def save_gif(self, file_path='dqn_render', gif_filename='output.gif'):
         """Tests the trained agent and creates a GIF animation."""
+        # Setting networks to evaluation mode
+        self.policy_net.eval()
+        self.target_net.eval()
+
         # Creating path if it does not exist
         if not os.path.exists(file_path):
             os.makedirs(file_path)
@@ -409,7 +434,12 @@ class DQNAgent():
 
         # Collecting frames for GIF creation
         frames = []
-        frames.append(self.env.render())  # Initial frame
+
+        # Initial frame
+        if self.env.render_mode != None:
+            frames.append(self.env.render())
+        else:
+            frames.append(self.env.predict(do_display=False))# Final frame with label
 
         # Playing the environment
         while True:
@@ -419,16 +449,22 @@ class DQNAgent():
             # Taking a step in the environment
             obs, _, terminated, truncated, _ = self.env.step(action)
 
-            # Render the frame
-            frame = self.env.render()
-            frames.append(frame)
+            # Rendering the frame
+            if self.env.render_mode != None:
+                frames.append(self.env.render())
+            else:
+                frames.append(self.env.display(mode='trigger_image'))
 
             # Setting done to terminated or truncated
             if terminated or truncated:
                 break
 
         # Adding final frame
-        frames.append(self.env.render())  # Final frame with label
+        self.env.test()
+        if self.env.render_mode != None:
+                frames.append(self.env.render())
+        else:
+            frames.append(self.env.display(mode='detection'))  # Final frame with label
 
         for i in range(len(frames)):
             original_height, original_width = frames[i].shape[:2]

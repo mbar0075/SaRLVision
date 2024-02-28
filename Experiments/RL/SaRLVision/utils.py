@@ -248,7 +248,7 @@ def calculate_best_iou(bounding_boxes, gt_boxes):
         Returns:
             The best IoU between the bounding boxes and the ground truth boxes.
     """
-    # Initializing the best IoU
+    # Initialising the best IoU
     best_iou = -np.inf
 
     # Iterating through the bounding boxes
@@ -275,7 +275,7 @@ def calculate_best_recall(bounding_boxes, gt_boxes):
         Returns:
             The best recall between the bounding boxes and the ground truth boxes.
     """
-    # Initializing the best recall
+    # Initialising the best recall
     best_recall = -np.inf
 
     # Iterating through the bounding boxes
@@ -309,17 +309,17 @@ def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     """
     # Retrieving the number of bounding boxes
     num_bounding_boxes = len(bounding_boxes)
-    num_gt_boxes = num_bounding_boxes
+    num_gt_boxes = len(gt_boxes)
 
     # Ensuring that the number of bounding boxes is the same as the number of ground truth boxes
     assert num_bounding_boxes == num_gt_boxes, "Evaluation Error: The number of bounding boxes must be the same as the number of ground truth boxes."
 
-    # Initializing the true positives, false positives and false negatives
+    # Initialising the true positives, false positives and false negatives
     tp = np.zeros(num_bounding_boxes)
     fp = np.zeros(num_bounding_boxes)
     fn = np.zeros(num_bounding_boxes)
 
-    # Initializing the IoU, precision and recall
+    # Initialising the IoU, precision and recall
     ious = np.zeros(num_bounding_boxes)
     precision = np.zeros(num_bounding_boxes)
     recall = np.zeros(num_bounding_boxes)
@@ -364,11 +364,6 @@ def calculate_precision_recall(bounding_boxes, gt_boxes, ovthresh):
     # Returning the precision, recall, f1 score, average IoU and average precision
     return precision, recall, f1_score, avg_iou, avg_precision
 
-
-
-
-
-#------------------------------------------------------------------------------------------------
 def voc_ap(rec, prec, voc2007=False):
     """
     Calculating the Average Precision (AP) and Recall.
@@ -435,54 +430,7 @@ def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, o
     # Returning all the metrics in a dictionary
     return {"class": current_class, "average_iou": avg_iou, "average_precision": avg_precision, "average_precision_voc": ap, "iou_threshold": ovthresh, "num_images": len(bounding_boxes)}, {"precision": prec, "recall": rec, "f1_score": f1_score,}
 
-# def plot_precision_recall_curve_for_all_classes(pre_rec_f1, title="Precision-Recall Curve", save_path=None, figsize=(20, 10)):
-#     """
-#         Plotting the precision-recall curve for all the classes.
-
-#         Args:
-#             pre_rec_f1: The dataframe containing the precision, recall, and F1-score for each class.
-#             title: The title of the plot.
-#             save_path: The path to save the plot.
-
-#         Returns:
-#             None
-#     """
-#     # Initializing the figure
-#     plt.figure(figsize=figsize)
-
-#     # Using the seaborn style
-#     plt.style.use("seaborn")
-
-#     # Iterating through the unique classes in pre_rec_f1
-#     for current_class in pre_rec_f1['class'].unique():
-#         # Selecting the rows for the current class
-#         df = pre_rec_f1[pre_rec_f1['class'] == current_class]
-
-#         # Retrieving the precision and recall
-#         precision = df["precision"].values
-#         recall = df["recall"].values
-
-#         # Plotting the precision-recall curve
-#         plt.plot(recall, precision, label=f"{current_class}")
-
-#     # Setting the title and labels
-#     plt.title(title)
-#     plt.xlabel("Recall")
-#     plt.ylabel("Precision")
-
-#     # Setting the legend
-#     plt.legend()
-
-#     plt.tight_layout()
-
-#     # Saving the plot if a save path is provided
-#     if save_path is not None:
-#         plt.savefig(save_path)
-
-#     # Showing the plot
-#     plt.show()
-
-def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.5]): # list(np.arange(0.5, 0.95, 0.05))):
+def calculate_detection_metrics(results_path, save_path=None, threshold_list=list(np.arange(0.5, 0.95, 0.05))):
     """
     Calculating the detection metrics for all the classes.
 
@@ -512,7 +460,7 @@ def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.
     # Retrieving the classes
     classes = list(results.keys())
 
-    # Initializing list of dataframes to store the detection metrics for each class and mean average precision
+    # Initialising list of dataframes to store the detection metrics for each class and mean average precision
     dfs = []
     mAps = {}
     pre_rec_f1 = {}
@@ -551,6 +499,7 @@ def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.
         # Removing class column
         df = df.drop(columns=["class"])
 
+        # Displaying the dataframe for the current IoU threshold
         print(df)
         dfs.append(df)
 

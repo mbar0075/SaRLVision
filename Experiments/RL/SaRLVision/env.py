@@ -379,6 +379,8 @@ class DetectionEnv(Env):
             self.render_mode = self.render_mode
             self.window = pygame.display.set_mode(self.window_size)
             pygame.display.set_caption("Detection Environment")
+            icon = pygame.image.load("SaRLVision/Icon/SaRLVisionIcon.png")
+            pygame.display.set_icon(icon)
             self.clock = pygame.time.Clock()
 
         # Setting the current action to None.
@@ -884,13 +886,7 @@ class DetectionEnv(Env):
         # Classification part (Resetting the classification dictionary).
         self.classification_dictionary = {'label': [], 'confidence': [], 'bbox': [], 'color': []}
 
-        # For Classification, if the environment mode is testing, then allow classification
-        if 'allow_classification' in env_config:
-            self.allow_classification = env_config['allow_classification']
-            del env_config['allow_classification']
-        else:
-            self.allow_classification = ALLOW_CLASSIFICATION
-
+        # For Classification
         # Initialising the classifier.
         if 'classifier' in env_config:
             self.classifier = env_config['classifier']
@@ -1163,7 +1159,7 @@ class DetectionEnv(Env):
             # For classification, retrieve the labels if the classification dictionary is empty
             if self.allow_classification and self.classification_dictionary['label']==[]:
                 self.get_labels()
-                self.filter_bboxes() # Saving to evaluation results
+            self.filter_bboxes() # Saving to evaluation results
 
         # Rendering the environment, if it is set to be rendered.
         if self.is_render:
@@ -1540,7 +1536,7 @@ class DetectionEnv(Env):
             # Plotting the image.
             if do_display and mode != 'detection':
                 self.plot_img(image, title='Step: ' + str(self.step_count) + ' | Reward: ' + str(round(self.cumulative_reward, 3)) + ' | IoU: ' + str(round(calculate_best_iou([self.bbox], self.current_gt_bboxes), 3)) + ' | Recall: ' + str(round(calculate_best_recall([self.bbox], self.current_gt_bboxes), 3)))
-            else:
+            elif do_display:
                 self.plot_img(image, title='Object Detection',figure_size=(10, 7))
             # Returning the image.
             return image
@@ -1778,7 +1774,7 @@ class DetectionEnv(Env):
         """
             Function which utilise the Mask to Annotation software to annotate an object mask in an image.
 
-            Note: This function is a wrapper for the Mask to Annotation software (IEEE ISM 2023)
+            Note: This function is a wrapper for the Mask to Annotation software (IEEE ISM 2023) (https://github.com/dylanseychell/mask-to-annotation)
 
             Args:
                 - Image: Image to annotate
@@ -2147,8 +2143,9 @@ class DetectionEnv(Env):
         image = self.image.copy()
 
         # SaRa algorithm
-        sara_info = sara.return_sara(image, GRID_SIZE, generator, mode=2)
+        sara_info = sara.return_sara(image, GRID_SIZE, generator, mode=1)
 
         # Plotting a 3D graph of the Saliency Ranking algorithm
         sara.plot_3D(self.image.copy(), sara_info, GRID_SIZE, rate=threshold)
-        pass
+        
+        return sara_info
