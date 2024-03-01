@@ -76,7 +76,7 @@ class DQNAgent():
         self.steps_done = 0
         self.episodes = 0
         self.episode_info = {"name":name, "episode_avg_rewards": [], "episode_lengths": [], "avg_iou": [], "iou": [], "final_iou": [], "recall": [], "avg_recall": [], "best_episode": {"episode": 0, "avg_reward": np.NINF}, "solved": False, "eps_duration": 0}
-        self.display_every_n_episodes = 1000
+        self.display_every_n_episodes = 1000000# Set to a large number to avoid displaying results
 
     def select_action(self, state):
         """ Selects an action using an epsilon greedy policy """
@@ -319,6 +319,9 @@ class DQNAgent():
         self.policy_net.eval()
         self.target_net.eval()
 
+        # Measuring the time taken to run the agent
+        start_time = time.time()
+
         # Resetting the environment
         obs, _ = self.env.reset()
 
@@ -347,6 +350,12 @@ class DQNAgent():
             # Exiting if the number of epochs is greater than or equal to 1
             if self.env.epochs >= 1:
                 break
+        
+        # Retrieving the ending time
+        end_time = time.time()
+
+        # Calculating the time taken
+        self.env.evaluation_results["eval_time"] = end_time - start_time
 
         # Saving the evaluation results
         self.env.save_evaluation_results()

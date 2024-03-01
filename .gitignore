@@ -169,7 +169,7 @@ output.gif
 # model files
 Experiments/RL/models/
 models/
-*.pth
-Experiments/RL/models/Normal DQN/optimizer.pth
-Experiments/RL/models/Normal DQN/policy_net.pth
-Experiments/RL/models/Normal DQN/target_net.pth
+# *.pth
+# Experiments/RL/models/Normal DQN/optimizer.pth
+# Experiments/RL/models/Normal DQN/policy_net.pth
+# Experiments/RL/models/Normal DQN/target_net.pth
