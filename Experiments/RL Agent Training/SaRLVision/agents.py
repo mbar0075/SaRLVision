@@ -360,7 +360,7 @@ class DQNAgent():
         # Saving the evaluation results
         self.env.save_evaluation_results()
 
-    def test(self, file_path='dqn_render',video_filename='output_video.mp4'):
+    def test(self, file_path='dqn_render', video_filename='output_video.mp4'):
         """ Tests the trained agent and creates an MP4 video """
         # Setting networks to evaluation mode
         self.policy_net.eval()
@@ -401,7 +401,6 @@ class DQNAgent():
             obs, _, terminated, truncated, _ = self.env.step(action)
 
             # Rendering the frame
-            self.env.test()
             if self.env.render_mode != None:
                 frames.append(self.env.render())
             else:
@@ -469,7 +468,6 @@ class DQNAgent():
                 break
 
         # Adding final frame
-        self.env.test()
         if self.env.render_mode != None:
                 frames.append(self.env.render())
         else:

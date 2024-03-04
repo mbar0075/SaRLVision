@@ -790,13 +790,11 @@ class DetectionEnv(Env):
                 - 'original_image': The original image to be used in the environment.
                 - 'target_bbox': The target bounding box to be used in the environment.
                 - 'target_gt_boxes': The target bounding boxes to be used in the environment.
-                - 'use_sara': Whether the environment will use the SARA model for initial bounding box prediction (True for using the SARA model, False for not using the SARA model).
                 - 'alpha': The scaling factor for bounding box movements in the environment.
                 - 'nu': The trigger reward in the environment.
                 - 'threshold': The IoU threshold for the trigger action positive or negative reward in the environment.
                 - 'classifier': The CNN used to classify the image ROI in the environment.
                 - 'classifier_target_size': The size of the image that will be used as input to the classifier.
-                - 'allow_classification': Whether the environment will allow classification or not (True for allowing classification, False for not allowing classification).
                 
             Output:
                 - State and information of the environment
@@ -864,13 +862,6 @@ class DetectionEnv(Env):
             del env_config['threshold']
         else:
             self.threshold = THRESHOLD
-
-        # Initialising the use_sara variable.
-        if 'use_sara' in env_config:
-            self.use_sara = env_config['use_sara']
-            del env_config['use_sara']
-        else:
-            self.use_sara = USE_SARA
 
         # Initialising the actions history and the number of episodes.
         self.actions_history = []
@@ -2098,7 +2089,7 @@ class DetectionEnv(Env):
             Function that filters the bounding boxes and adds them to the evaluation results.
         """
         # For Evaluation (Testing), appending the bounding boxes to the evaluation results
-        if self.env_mode == TEST_MODE: # Testing mode
+        if self.env_mode == TEST_MODE and self.use_dataset is not None: # Testing mode
             # Extracting the image name
             img_name = list(self.dataset[self.current_class].keys())[self.class_image_index - 1]
 

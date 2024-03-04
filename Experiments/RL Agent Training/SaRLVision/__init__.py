@@ -20,23 +20,23 @@ register(
 register(
     id='DetectionEnv-v0-Train',
     entry_point='SaRLVision.env:DetectionEnv',
-    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'train', 'dataset_year': '2007+2012'}} # Training environment
+    kwargs={"env_config": {'dataset': '../Datasets/PascalVOC2007_2012Dataset', 'dataset_image_set': 'train', 'dataset_year': '2007+2012'}} # Training environment
 )
 
 register(
     id='DetectionEnv-v0-Test',
     entry_point='SaRLVision.env:DetectionEnv',
-    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007'}} # Testing environment
+    kwargs={"env_config": {'dataset': '../Datasets/PascalVOC2007Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007', 'allow_classification': True}} # Testing environment
 )
 
 register(
     id='DetectionEnv-v0-Val',
     entry_point='SaRLVision.env:DetectionEnv',
-    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'val', 'dataset_year': '2007'}} # Validation environment
+    kwargs={"env_config": {'dataset': '../Datasets/PascalVOC2007Dataset', 'dataset_image_set': 'val', 'dataset_year': '2007', 'allow_classification': True}} # Validation environment
 )
 
 register(
     id='DetectionEnv-v0-View',
     entry_point='SaRLVision.env:DetectionEnv',
-    kwargs={"env_config": {'dataset': 'PascalVOC2007_2012Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007', 'render_mode': "human"}} # Display environment
+    kwargs={"env_config": {'dataset': '../Datasets/PascalVOC2007Dataset', 'dataset_image_set': 'test', 'dataset_year': '2007', 'render_mode': "human", 'allow_classification': True}} # Display environment
 )
