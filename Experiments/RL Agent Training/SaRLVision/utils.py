@@ -499,6 +499,10 @@ def calculate_detection_metrics(results_path, save_path=None, threshold_list=lis
         # Removing class column
         df = df.drop(columns=["class"])
 
+        # Multiplying the average precision by 100 to get the percentage
+        df["average_precision_voc"] *= 100
+        df["average_precision"] *= 100
+
         # Displaying the dataframe for the current IoU threshold
         print(df)
         dfs.append(df)

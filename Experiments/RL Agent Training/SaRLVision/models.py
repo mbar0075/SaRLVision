@@ -137,6 +137,7 @@ class DQN(nn.Module):
         11. ReLU activation function
         12. Dropout layer with 0.2 dropout rate
         13. Linear layer with 128 neurons
+        14. Output layer with noutputs neurons
     """
     def __init__(self, ninputs, noutputs):
         super(DQN, self).__init__()
@@ -189,17 +190,19 @@ class DuelingDQN(nn.Module):
         11. ReLU activation function
         12. Dropout layer with 0.2 dropout rate
         13. Linear layer with 128 neurons
+        14. ReLU activation function
         
     Value Function:
         1. Linear layer with 128 neurons
-        2. ReLU activation function
-        3. Linear layer with 1 neuron
+        2. Linear layer with 1 neuron
 
     Advantage Function:
         1. Linear layer with 128 neurons
-        2. ReLU activation function
-        3. Linear layer with noutputs neurons
+        2. Linear layer with noutputs neurons
 
+    Output:
+        The value and advantage functions combined into the Q function (Q = V + A - mean(A))
+        The dimensions of the output are noutputs
     """
     def __init__(self, ninputs, noutputs):
         super(DuelingDQN, self).__init__()
@@ -228,74 +231,3 @@ class DuelingDQN(nn.Module):
         adv = self.advfunc(o)
         # Returning the value and advantage functions combined into the Q function (Q = V + A - mean(A))
         return value + adv - adv.mean(dim=-1, keepdim=True)
-
-
-
-
-# ------------------- Noisy DQN -------------------
-class NoisyLinear(nn.Module):
-    """
-        The noisy linear layer that adds noise to the weights of the linear layer
-
-        Args:
-            in_size: The number of inputs
-            out_size: The number of outputs
-
-        Layers:
-            1. Linear layer with in_size inputs and out_size outputs
-            2. Linear layer with in_size inputs and out_size outputs
-            3. Linear layer with out_size outputs
-            4. Linear layer with out_size outputs
-    """
-    def __init__(self, in_size, out_size):
-        super(NoisyLinear, self).__init__()
-        # Defining the parameters of the layer as trainable parameters (weights and biases mu and sigma)
-        self.w_mu = nn.Parameter(torch.empty((out_size, in_size)))
-        self.w_sigma = nn.Parameter(torch.empty((out_size, in_size)))
-        self.b_mu = nn.Parameter(torch.empty((out_size)))
-        self.b_sigma = nn.Parameter(torch.empty((out_size)))
-
-        # Creating the noise tensors for the weights and biases of the layer (w_epsilon and b_epsilon)
-        uniform_(self.w_mu, -math.sqrt(3 / in_size), math.sqrt(3 / in_size))
-        uniform_(self.b_mu, -math.sqrt(3 / in_size), math.sqrt(3 / in_size))
-
-        # Initializing the noise tensors with the same shape as the weights and biases
-        nn.init.constant(self.w_sigma, 0.017)
-        nn.init.constant(self.b_sigma, 0.017)
-
-    def forward(self, x, sigma=0.1): # Sigma Controls the amount of noise was 1 before
-        # Forward pass through the layer
-        if self.training: # If the model is in training mode, add noise to the weights and biases
-            w_noise = torch.normal(0, sigma, size=self.w_mu.size())
-            b_noise = torch.normal(0, sigma, size=self.b_mu.size())
-            return F.linear(x, self.w_mu + self.w_sigma * w_noise, self.b_mu + self.b_sigma * b_noise)
-        else:# If the model is in evaluation mode, return the mean of the weights and biases
-            return F.linear(x, self.w_mu, self.b_mu)
-        
-class NoisyDQN(nn.Module):
-    """
-        The noisy DQN network that estimates the action-value function
-
-        Args:
-            ninputs: The number of inputs
-            noutputs: The number of outputs
-
-        Layers:
-            1. Noisy linear layer with 64 neurons
-            2. Tanh activation function
-            3. Noisy linear layer with noutputs neurons
-    """
-    def __init__(self, ninputs, noutputs):
-        super(NoisyDQN, self).__init__()
-        self.a1 = NoisyLinear(ninputs, 1024)
-        self.a2 = NoisyLinear(1024, noutputs)
-
-    def forward(self, X):
-        # Forward pass
-        o = self.a1(X)
-        o = torch.tanh(o)
-        o = self.a2(o)
-        return o
-
-    def __call__(self, X):
-        return self.forward(X)

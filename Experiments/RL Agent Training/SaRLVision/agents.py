@@ -319,6 +319,9 @@ class DQNAgent():
         self.policy_net.eval()
         self.target_net.eval()
 
+        # Declaring episode length
+        episode_lengths = []
+
         # Measuring the time taken to run the agent
         start_time = time.time()
 
@@ -341,6 +344,9 @@ class DQNAgent():
 
             # Ending the episode and displaying the results if the episode is done
             if done:
+                # Appending the episode length
+                episode_lengths.append(self.env.step_count)
+
                 # Resetting the environment
                 obs, _ = self.env.reset()
 
@@ -357,8 +363,11 @@ class DQNAgent():
         # Calculating the time taken
         self.env.evaluation_results["eval_time"] = end_time - start_time
 
+        # Storing the episode lengths
+        self.env.evaluation_results["episode_lengths"] = episode_lengths
+
         # Saving the evaluation results
-        self.env.save_evaluation_results()
+        self.env.save_evaluation_results(path)
 
     def test(self, file_path='dqn_render', video_filename='output_video.mp4'):
         """ Tests the trained agent and creates an MP4 video """
@@ -592,62 +601,10 @@ class DuelingDQNAgent(DQNAgent):
     def __init__(self, env, replay_buffer, target_update_freq=TARGET_UPDATE_FREQ, criterion=nn.SmoothL1Loss(), name="DuelingDQN", exploration_mode=EXPLORATION_MODE):
         super().__init__(env, replay_buffer, target_update_freq, criterion, name, DuelingDQN, exploration_mode)
 
-class NoisyDQNAgent(DQNAgent):
-    """ The Noisy DQN agent that interacts with the environment and inherits from the DQN agent """
-    def __init__(self, env, replay_buffer, target_update_freq=TARGET_UPDATE_FREQ, criterion=nn.SmoothL1Loss(), name="NoisyDQN", exploration_mode=EXPLORATION_MODE):
-        super().__init__(env, replay_buffer, target_update_freq, criterion, name, NoisyDQN, exploration_mode)
-
 class DoubleDuelingDQNAgent(DQNAgent):
     """ The Double Dueling DQN agent that interacts with the environment and inherits from the DQN agent """
     def __init__(self, env, replay_buffer, target_update_freq=TARGET_UPDATE_FREQ, criterion=nn.SmoothL1Loss(), name="DoubleDuelingDQN", exploration_mode=EXPLORATION_MODE):
         super().__init__(env, replay_buffer, target_update_freq, criterion, name, DuelingDQN, exploration_mode)
-
-    def update(self):
-        """ Updates the policy network using a batch of transitions """
-        # Sampling a batch of transitions from the replay buffer
-        states, actions, rewards, dones, next_states = self.replay_buffer.sample_batch()
-
-        # Converting the tensors to cuda tensors
-        states = states.to(device).squeeze(1)
-        actions = actions.to(device)
-        rewards = rewards.to(device)
-        dones = dones.to(device)
-        next_states = next_states.to(device).squeeze(1)
-        
-        # Calculating the Q-values for the current states
-        qvalues = self.policy_net(states).gather(1, actions)
-
-        # Calculating the Q-values for the next states
-        with torch.no_grad():
-            # Using the policy network to select the action with the highest Q-value for the next states (argmax(Q(s',a)))
-            next_state_actions = self.policy_net(next_states).argmax(dim=1, keepdim=True)
-            
-            # Using the target network to calculate the Q-value of the selected action for the next states (Q'(s',argmax(Q(s',a))))
-            next_qvalues = self.target_net(next_states).gather(1, next_state_actions)
-
-            # Calculating the next Q-values using the Bellman equation (Q(s,a) = r + γ * Q'(s',argmax(Q(s',a))))
-            target_qvalues = rewards + GAMMA * (1 - dones.type(torch.float32)) * next_qvalues
-
-        # Calculating the loss
-        loss = self.criterion(qvalues, target_qvalues)
-
-        # Optimizing the model
-        self.optimizer.zero_grad()
-        loss.backward()
-
-        # Clipping the gradients
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-1, 1)
-        self.optimizer.step()
-
-        # Updating the target network
-        if self.episodes % self.target_update_freq == 0:
-            self.target_net.load_state_dict(self.policy_net.state_dict())
-
-class DoubleNoisyDQNAgent(DQNAgent):
-    """ The Double Noisy DQN agent that interacts with the environment and inherits from the DQN agent """
-    def __init__(self, env, replay_buffer, target_update_freq=TARGET_UPDATE_FREQ, criterion=nn.SmoothL1Loss(), name="DoubleNoisyDQN", exploration_mode=EXPLORATION_MODE):
-        super().__init__(env, replay_buffer, target_update_freq, criterion, name, NoisyDQN, exploration_mode)
 
     def update(self):
         """ Updates the policy network using a batch of transitions """

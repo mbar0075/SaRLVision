@@ -378,7 +378,7 @@ class DetectionEnv(Env):
             pygame.init()
             self.render_mode = self.render_mode
             self.window = pygame.display.set_mode(self.window_size)
-            pygame.display.set_caption("Detection Environment")
+            pygame.display.set_caption("SaRLVision Environment")
             icon = pygame.image.load("SaRLVision/Icon/SaRLVisionIcon.png")
             pygame.display.set_icon(icon)
             self.clock = pygame.time.Clock()
