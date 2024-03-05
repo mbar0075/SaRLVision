@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from collections import namedtuple, deque
+from IPython.display import display
 
 # Setting the device to cpu as it was faster than gpu for this task
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")#torch.device("cpu")
@@ -504,7 +505,7 @@ def calculate_detection_metrics(results_path, save_path=None, threshold_list=lis
         df["average_precision"] *= 100
 
         # Displaying the dataframe for the current IoU threshold
-        print(df)
+        display(df)
         dfs.append(df)
 
     # If save_path is provided, save the results

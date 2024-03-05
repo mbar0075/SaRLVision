@@ -534,6 +534,10 @@ class DetectionEnv(Env):
         # Cropping the image based on the bounding box
         image = image[bbox[1]:bbox[3], bbox[0]:bbox[2]]
 
+        # Ensuring that the image is not empty
+        if image.size == 0:
+            image = self.image.copy() # If the image is empty, then we use the original image
+
         # Transforming the image (So what is being fed to the feature extractor is the region of intesrest denoted by the current bounding box)
         image = transform_input(image, target_size=self.target_size)
 
@@ -790,9 +794,6 @@ class DetectionEnv(Env):
                 - 'original_image': The original image to be used in the environment.
                 - 'target_bbox': The target bounding box to be used in the environment.
                 - 'target_gt_boxes': The target bounding boxes to be used in the environment.
-                - 'alpha': The scaling factor for bounding box movements in the environment.
-                - 'nu': The trigger reward in the environment.
-                - 'threshold': The IoU threshold for the trigger action positive or negative reward in the environment.
                 - 'classifier': The CNN used to classify the image ROI in the environment.
                 - 'classifier_target_size': The size of the image that will be used as input to the classifier.
                 
@@ -836,32 +837,11 @@ class DetectionEnv(Env):
         # Resetting the number of triggers to 0
         self.no_of_triggers = 0
 
-        # Initialising the aspect ratio of the bounding box
-        if 'alpha' in env_config:
-            self.alpha = env_config['alpha']
-            del env_config['alpha']
-        else:
-            self.alpha = ALPHA
-
-        # Reward of Trigger
-        if 'nu' in env_config:
-            self.nu = env_config['nu']
-            del env_config['nu']
-        else:
-            self.nu = NU
-
         # Resetting the step count, the cumulative reward, and truncated and terminated to False.
         self.step_count = 0
         self.cumulative_reward = 0
         self.truncated = False
         self.terminated = False
-
-        # Initialising the threshold.
-        if 'threshold' in env_config:
-            self.threshold = env_config['threshold']
-            del env_config['threshold']
-        else:
-            self.threshold = THRESHOLD
 
         # Initialising the actions history and the number of episodes.
         self.actions_history = []
