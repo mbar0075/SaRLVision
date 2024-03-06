@@ -537,6 +537,7 @@ class DetectionEnv(Env):
         # Ensuring that the image is not empty
         if image.size == 0:
             image = self.image.copy() # If the image is empty, then we use the original image
+            self.truncated = True # Setting truncated to True
 
         # Transforming the image (So what is being fed to the feature extractor is the region of intesrest denoted by the current bounding box)
         image = transform_input(image, target_size=self.target_size)
@@ -1126,6 +1127,10 @@ class DetectionEnv(Env):
         # If the episode is finished, increment the number of episodes.
         if self.terminated or self.truncated:
             self.num_episodes += 1
+
+            # For when the bounding box is out of the image, we restart the environment and change the state
+            if self.truncated:
+                self.restart_and_change_state()
 
             # For classification, retrieve the labels if the classification dictionary is empty
             if self.allow_classification and self.classification_dictionary['label']==[]:

@@ -431,7 +431,7 @@ def calculate_class_detection_metrics(current_class, bounding_boxes, gt_boxes, o
     # Returning all the metrics in a dictionary
     return {"class": current_class, "average_iou": avg_iou, "average_precision": avg_precision, "average_precision_voc": ap, "iou_threshold": ovthresh, "num_images": len(bounding_boxes)}, {"precision": prec, "recall": rec, "f1_score": f1_score,}
 
-def calculate_detection_metrics(results_path, save_path=None, threshold_list=list(np.arange(0.5, 0.95, 0.05))):
+def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.5]):#list(np.arange(0.5, 0.95, 0.05))):
     """
     Calculating the detection metrics for all the classes.
 
