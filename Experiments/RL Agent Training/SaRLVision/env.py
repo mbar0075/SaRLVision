@@ -2100,6 +2100,9 @@ class DetectionEnv(Env):
             Output:
                 - Initial bounding box prediction
         """
+        # Resetting the SaRa algorithm
+        sara.reset()
+
         # Creating a copy of the original image
         image = self.image.copy()
 
@@ -2119,6 +2122,9 @@ class DetectionEnv(Env):
             Args:
                 - Threshold: Threshold for the Saliency Ranking algorithm
         """
+        # Resetting the SaRa algorithm
+        sara.reset()
+        
         # Creating a copy of the original image
         image = self.image.copy()
 

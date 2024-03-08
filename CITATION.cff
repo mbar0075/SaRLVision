@@ -11,7 +11,6 @@ authors:
   - given-names: Matthias
     family-names: Bartolo
     email: matthias.bartolo.21@um.edu.mt
-    name-particle: Matthias
     affiliation: University of Malta
     orcid: 'https://orcid.org/0009-0006-1353-4556'
   - given-names: Dylan
@@ -55,4 +54,7 @@ keywords:
   - Reinforcement Learning
   - Saliency Ranking
   - Deep Learning
+  - Self-Explaining AI
 license: MIT
+version: 1.0.0
+date-released: '2024-06-12'
