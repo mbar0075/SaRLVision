@@ -492,7 +492,7 @@ def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.
             aps[current_class] = detection_metrics["average_precision_voc"]
 
         # Calculating the mean average precision for each class at given IoU thresholds
-        mAps[ovthresh] = np.mean(list(aps.values()))
+        mAps[ovthresh] = np.mean(list(aps.values()))*100
 
         # Transforming the detection metrics dictionary into a dataframe
         df = pd.DataFrame(detection_metrics_dict).T

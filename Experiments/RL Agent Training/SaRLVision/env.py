@@ -26,6 +26,7 @@ import pygame
 import os
 import sys
 import json
+import importlib
 
 # Importing SaRa (Saliency Ranking (Seychell et al. IEEE IC3D))
 import SaRLVision.SaRa.saraRC1 as sara
@@ -247,6 +248,9 @@ class DetectionEnv(Env):
 
         # If use_sara is True, then invoke the generate_initial_bbox function
         if self.use_sara:
+            # Reloading SaRa (Saliency Ranking (Seychell et al. IEEE IC3D))
+            importlib.reload(sara)
+            # Generating the initial bounding box using SaRa
             self.bbox = self.generate_initial_bbox()
 
         # Initialising the feature extractor and the transform method.

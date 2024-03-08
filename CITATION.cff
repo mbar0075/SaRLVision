@@ -1,0 +1,58 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: SaRLVision
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Matthias
+    family-names: Bartolo
+    email: matthias.bartolo.21@um.edu.mt
+    name-particle: Matthias
+    affiliation: University of Malta
+    orcid: 'https://orcid.org/0009-0006-1353-4556'
+  - given-names: Dylan
+    family-names: Seychell
+    email: dylan.seychell@um.edu.mt
+    affiliation: University of Malta
+    orcid: 'https://orcid.org/0000-0002-2377-9833'
+  - given-names: Josef
+    family-names: Bajada
+    email: josef.bajada@um.edu.mt
+    affiliation: University of Malta
+    orcid: 'https://orcid.org/0000-0002-8274-6177'
+repository-code: 'https://github.com/mbar0075/SaRLVision'
+abstract: >-
+  In an era emphasising sustainability and transparency, the
+  significance of proficient object detection algorithms
+  cannot be overstated. Despite their remarkable speed,
+  these algorithms often lack transparency in their
+  decision-making process. This study delves into innovative
+  strategies for object detection, integrating reinforcement
+  learning-based visual attention techniques with saliency
+  ranking methods, all while ensuring comprehensive
+  visualisations to elucidate algorithmic decision-making.
+  Additionally, this research investigates the optimisation
+  of existing reinforcement learning-based detectors to
+  expedite the pipeline and streamline processes for lighter
+  models. Compared to prior methodologies, the proposed
+  approach also integrates various configurable real-time
+  visualisations. These visualisations furnish users with
+  clear insights into current bounding box coordinates and
+  the actions being executed, facilitating a more intuitive
+  comprehension of algorithmic decisions. Ultimately, this
+  contributes to instilling trust and transparency in object
+  detection systems, particularly aiding in the deployment
+  of artificial intelligence techniques in sensitive domains
+  while perpetually advancing research in the realm of AI.
+keywords:
+  - Artificial Intelligence
+  - Object Detection
+  - Computer Vision
+  - Reinforcement Learning
+  - Saliency Ranking
+  - Deep Learning
+license: MIT
