@@ -305,9 +305,155 @@ class DQNAgent():
         # Calculating the time taken
         self.episode_info["eps_duration"] = end_time - start_time
 
+    def explicit_train(self, decode=False):
+        """ Trains the agent for nsteps steps """
+        # Initialising the replay buffer
+        self.replay_buffer.initialize()
+
+        # Setting networks to training mode
+        self.policy_net.train()
+        self.target_net.train()
+
+        # Declaring 2d dictionary to store the action log
+        action_log = {}
+
+        # Creating episode key
+        action_log[self.episodes] = []
+
+        # Resetting the environment
+        obs, _ = self.env.reset()
+
+        # Retrieving the starting time
+        start_time = time.time()
+
+        # Setting the episode_reward to 0
+        episode_reward = 0
+
+        # Running the agent for nsteps steps
+        for step in itertools.count():
+            # Selecting an action
+            action = self.select_action(obs)
+
+            # Printing the action
+            if decode:
+                self.env.decode_action(action)
+
+            # Appending the action to the action log
+            action_log[self.episodes].append((action, self.env.decode_render_action(action)))
+
+            # Taking a step in the environment
+            new_obs, reward, terminated, truncated, info = self.env.step(action)
+
+            # Adding the IoU and recall to the episode info
+            self.episode_info["iou"].append(info["iou"])
+            self.episode_info["recall"].append(info["recall"])
+
+            # Adding the reward to the cumulative reward
+            episode_reward += reward
+
+            # Setting done to terminated or truncated
+            done = terminated or truncated
+
+            # Creating a transition
+            transition = Transition(obs, action, reward, done, new_obs)
+
+            # Appending the transition to the replay buffer
+            self.replay_buffer.append(transition)
+
+            # Resetting the observation
+            obs = new_obs
+
+            # Ending the episode and displaying the results if the episode is done
+            if done:
+                # Appending the final IoU to the episode info
+                self.episode_info["final_iou"].append(info["iou"])
+                
+                # Appending the rewards to the replay buffer
+                self.replay_buffer.rewards.append(episode_reward)
+
+                # Updating epsilon
+                self.update_epsilon()
+
+                # Resetting the environment
+                obs, _ = self.env.reset()
+
+                # Incrementing the number of episodes
+                self.episodes += 1
+
+                # Creating episode key
+                action_log[self.episodes] = []
+
+                # Appending the average episode reward
+                self.episode_info["episode_avg_rewards"].append(np.mean(self.replay_buffer.rewards))
+
+                # Appending the episode length
+                self.episode_info["episode_lengths"].append(self.steps_done)
+
+                # Updating the best episode
+                if self.episode_info["episode_avg_rewards"][-1] > self.episode_info["best_episode"]["avg_reward"]:
+                    self.episode_info["best_episode"]["episode"] = self.episodes
+                    self.episode_info["best_episode"]["avg_reward"] = self.episode_info["episode_avg_rewards"][-1]
+
+                # Calculating the average IoU and recall
+                avg_iou = np.mean(self.episode_info["iou"][-self.env.step_count:])
+                avg_recall = np.mean(self.episode_info["recall"][-self.env.step_count:])
+
+                # Appending the average IoU and recall
+                self.episode_info["avg_iou"].append(avg_iou)
+                self.episode_info["avg_recall"].append(avg_recall)
+
+                if USE_EPISODE_CRITERIA:
+                    # If the environment number of episodes is greater than SUCCESS_CRITERIA, the environment is considered solved
+                    if self.episodes >= SUCCESS_CRITERIA_EPS:
+                        self.episode_info["solved"] = True
+                else:
+                    # If the environment number of epochs is greater than SUCCESS_CRITERIA, the environment is considered solved
+                    if self.env.epochs >= SUCCESS_CRITERIA_EPOCHS:
+                        self.episode_info["solved"] = True
+                
+                # Displaying the results
+                if self.episodes % self.display_every_n_episodes == 0:
+                    print("\033[35mEpisode:\033[0m {} \033[35mEpsilon:\033[0m {:.2f} \033[35mAverage Reward:\033[0m {} \033[35mEpisode Length:\033[0m {} \033[35mAverage IoU:\033[0m {:.2f} \033[35mAverage Recall:\033[0m {:.2f} \033[35mEpochs:\033[0m {} \033[35mFinal IoU:\033[0m {:.2f}".format(
+                                self.episodes,
+                                self.epsilon,
+                                self.episode_info["episode_avg_rewards"][-1],
+                                self.episode_info["episode_lengths"][-1],
+                                avg_iou,
+                                avg_recall,
+                                self.env.epochs,
+                                self.episode_info["final_iou"][-1])
+                        )
+                    print("-" * 100)
+
+                # Resetting the cumulative reward
+                episode_reward = 0
+
+                self.steps_done = 0
+
+                # Checking if the environment is solved
+                if self.episode_info["solved"]:
+                    print("\033[32mCompleted {} episodes!\033[0m".format(self.episodes))
+                    print("-" * 100)
+                    break
+
+            # Updating the policy network
+            self.update()
+
+            # Updating the number of steps
+            self.steps_done += 1
+
+        # Retrieving the ending time
+        end_time = time.time()
+
+        # Calculating the time taken
+        self.episode_info["eps_duration"] = end_time - start_time
+
+        # Returning the action log
+        return action_log
+
     def run(self):
         """ Runs the agent """
-        # Initializing the replay buffer
+        # Initialising the replay buffer
         self.replay_buffer.initialize()
 
         # Training the agent
