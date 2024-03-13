@@ -449,6 +449,10 @@ def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.
 
     # Loading all files in the results path directory
     for file in os.listdir(results_path):
+        # Skipping files that are not .npy files
+        if not file.endswith(".npy"):
+            continue
+        
         # Loading the results
         current_results = np.load(os.path.join(results_path, file), allow_pickle=True).item()
 
@@ -503,6 +507,9 @@ def calculate_detection_metrics(results_path, save_path=None, threshold_list=[0.
         # Multiplying the average precision by 100 to get the percentage
         df["average_precision_voc"] *= 100
         df["average_precision"] *= 100
+
+        # Adding the mean average precision to the dataframe as a new column
+        df.loc["mAp"] = mAps[ovthresh]
 
         # Displaying the dataframe for the current IoU threshold
         display(df)
