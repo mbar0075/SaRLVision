@@ -73,7 +73,7 @@ TEST_MODE = 1
 RANDOM_EXPLORE = 0
 GUIDED_EXPLORE = 1
 # Setting Exploration Mode
-EXPLORATION_MODE = GUIDED_EXPLORE
+EXPLORATION_MODE = RANDOM_EXPLORE
 
 # Defining the transition tuple
 Transition = namedtuple('Transition', ('state', 'action', 'reward', 'done', 'next_state'))
