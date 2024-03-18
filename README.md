@@ -1,7 +1,5 @@
 # SaRLVision
 
-<!--
-
 <p align="right" style="text-align: right;">
   <strong>"A reinforcement learning object detector which leverages saliency ranking."</strong>
 </p>
@@ -10,10 +8,53 @@
   <strong>"A self-explainable detector that provides a fully observable action log."</strong>
 </p>
 
-## Example of Output
-
 <p align='center'>
-  <img src="Diagrams/gif" alt="Output gif" width="50%" height="auto">
+<table align="center">
+  <tr>
+    <td align="center">
+      <img src="Diagrams/GIFs/bottle/bottle_GIF_5.gif" alt="GIF1"  width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/horse/horse_GIF_1.gif" alt="GIF2" width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/car/car_GIF_1.gif" alt="GIF3" width="100%" height="auto" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="Diagrams/GIFs/diningtable/diningtable_GIF_6.gif" alt="GIF4"  width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/sheep/sheep_GIF_1.gif" alt="GIF5" width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/pottedplant/pottedplant_GIF_9.gif" alt="GIF6" width="100%" height="auto" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="Diagrams/GIFs/train/train_GIF_3.gif" alt="GIF7"  width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/person/person_GIF_3.gif" alt="GIF8" width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/dog/dog_GIF_6.gif" alt="GIF9" width="100%" height="auto" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="Diagrams/GIFs/bird/bird_GIF_5.gif" alt="GIF10"  width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/cat/cat_GIF_6.gif" alt="GIF11" width="100%" height="auto" />
+    </td>
+    <td align="center">
+      <img src="Diagrams/GIFs/aeroplane/aeroplane_GIF_6.gif" alt="GIF12" width="100%" height="auto" />
+    </td>
+  </tr>
+</table>
 </p>
 
 <p align="justify">
@@ -100,7 +141,7 @@ Nonetheless, the system provides a clear log outlining the framework's decision-
 
 <p align="justify">
 
-The SaRLVision Window provides a real-time view of the object detection process, displaying the current state of the environment, the actions being taken, and the corresponding results. This interactive window is designed to be user-friendly, providing a clear and intuitive interface for users to understand the workings of the system. It also includes controls for pausing, resuming, and stopping the detection process, giving users a degree of control over the system's operation.
+The SaRLVision Window provides a real-time view of the object detection process, displaying the current state of the environment, the actions being taken, and the corresponding results. This interactive window is designed to be user-friendly, providing a clear and intuitive interface for users to understand the workings of the system.
 
 <p align='center'>
 <table align="center">
@@ -118,7 +159,39 @@ The SaRLVision Window provides a real-time view of the object detection process,
 </table>
 </p>
 
-This window is implemented using the `pygame` library, which is a popular framework for building interactive applications and games in Python. Pygame provides a set of functions and classes for creating graphical user interfaces, handling user input, and rendering graphics on the screen. By utilizing the Pygame API, the SaRLVision Window is able to provide a visually appealing and responsive interface for users to interact with the object detection system.
+This window is implemented using the `pygame` library, which is a popular framework for building interactive applications and games in Python. Pygame provides a set of functions and classes for creating graphical user interfaces, handling user input, and rendering graphics on the screen. By utilizing the Pygame API, the SaRLVision Window is able to provide a visually appealing interface to users.
+
+</p>
+
+## Evaluation
+
+<p align="justify">
+
+The designed SaRLVision system was extensively tested for a number of environment configurations with the aforementioned agents across a set of experiments. The system was evaluated through the `mean Average Precision (mAP)` metric, which is a widely used metric for evaluating object detection models. The mAP metric is calculated by averaging the precision-recall curve for each class, and then averaging the results across all classes. This metric provides a comprehensive evaluation of the model's performance, taking into account both precision and recall. Furthermore, the developed agents where trained on the `Pascal VOC 2007+2012 training` set and evaluated on the `Pascal VOC 2007 test` set, which is a standard benchmark dataset for object detection, as prevalent in the literature. The results showcasing different agents and different environment configurations are presented below:
+
+<p align='center'>
+  <img src="Diagrams/figures/Experiment3/total_reward_vs_episode_train.png" alt="Evaluation Diagram" width="100%" height="auto">
+</p>
+
+<!-- | **Index** | **aero** | **bike** | **bird** | **boat** | **bottle** | **bus** | **car** | **cat** | **chair** | **cow** | **table** | **dog** | **horse** | **mbike** | **person** | **plant** | **sheep** | **sofa** | **train** | **tv** | **mAP** |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Config 1) (Ours)** | 76.4 | 25.7 | 64.3 | 18.3 | 4.1 | **74.6** | **67.9** | 73.1 | 4.1 | 64.3 | 34.1 | 29.8 | **82.7** | 73.9 | 38.8 | 6.6 | 68.9 | 21.3 | 52.9 | 55.7 | 46.9 |
+| **Config 2) (Ours)** | 60.2 | 14.0 | 13.5 | 60.0 | 4.3 | 70.1 | 60.1 | 68.7 | 15.3 | 12.7 | 65.1 | 18.4 | 64.3 | 21.0 | 67.8 | **65.2** | 69.2 | 20.9 | 12.5 | 1.2 | 39.2 |
+| **Config 3) (Ours)** | 70.8 | 30.3 | **72.1** | 17.7 | 19.9 | 49.3 | 63.9 | 66.9 | 6.2 | 21.6 | 33.4 | **66.0** | 70.1 | 72.6 | 22.4 | 7.2 | 44.4 | 21.5 | **72.1** | 14.1 | 42.1 |
+| **Config 4) (Ours)** | 74.0 | 65.2 | 22.6 | 9.2 | 6.7 | 35.3 | 30.0 | 34.4 | 1.2 | 22.6 | 67.9 | 25.2 | 69.2 | 32.5 | 20.8 | 58.9 | **70.0** | 23.1 | 42.9 | 2.7 | 35.7 |
+| **Config 5) (Ours)** | 65.5 | 17.8 | **67.8** | 11.3 | 2.2 | 39.1 | 64.5 | 64.8 | **65.6** | 26.5 | 66.9 | 62.0 | **74.8** | 32.0 | 22.5 | 5.0 | 16.4 | 21.6 | 71.9 | 3.8 | 40.1 |
+| **Config 6) (Ours)** | 27.6 | 26.2 | 20.0 | 12.8 | **58.6** | **72.4** | 62.1 | 59.1 | 59.1 | 14.8 | 62.5 | 60.7 | 60.7 | 18.6 | **68.8** | 1.7 | 13.8 | 59.1 | 69.7 | 2.6 | 41.5 |
+| **Config 7) (Ours)** | 74.3 | 18.8 | 21.3 | 17.7 | 1.9 | 25.7 | 66.4 | 24.3 | 4.3 | 64.8 | **71.9** | 30.1 | 30.6 | 62.3 | 22.1 | 1.8 | 12.5 | 25.3 | 73.7 | 3.9 | 32.7 |
+| **Config 8) (Ours)** | **76.8** | 16.2 | 33.2 | 18.0 | 25.2 | 31.8 | 23.2 | 64.7 | 4.9 | 22.2 | 34.5 | 39.5 | **74.1** | 23.3 | 61.5 | 6.8 | 20.2 | 25.1 | 69.8 | 2.9 | 33.7 |
+| **Config 9) (Ours)** | 56.2 | 23.6 | 45.6 | 26.5 | 3.5 | 68.6 | **67.0** | 33.7 | 4.3 | 17.5 | 68.2 | 45.1 | **76.2** | 45.2 | 20.4 | 4.8 | **66.3** | **63.9** | **76.5** | 15.4 | 41.4 |
+| **Config 10) (Ours)** | 72.6 | **62.6** | 22.0 | 18.4 | **65.1** | 33.6 | **65.2** | 44.9 | 15.4 | **65.7** | 28.2 | 63.4 | 70.1 | 30.5 | 11.2 | 10.0 | 64.9 | 18.2 | 68.0 | **64.3** | 44.7 |
+| **Config 11) (Ours)** | 74.4 | 27.6 | 35.6 | **61.5** | 14.7 | 34.2 | **64.2** | 43.9 | 4.7 | 62.8 | 73.4 | 24.8 | **81.1** | **71.8** | 16.2 | 5.3 | 22.5 | 65.4 | **76.3** | 2.9 | 43.2 |
+| **Config 12) (Ours)** | **70.6** | 19.2 | 60.2 | 30.1 | 2.4 | 37.8 | 23.6 | **75.2** | 3.2 | 61.2 | 63.3 | 37.5 | 21.6 | 22.2 | 9.1 | 4.0 | 29.6 | 63.8 | 67.8 | 1.9 | 35.2 |
+| **Config 13) (Ours)** | 64.0 | 26.5 | 20.9 | 20.7 | 7.4 | 40.8 | 48.7 | 71.5 | 4.2 | 36.3 | 25.7 | **66.0** | **80.5** | 38.1 | 25.1 | 15.0 | 63.8 | 65.2 | 73.8 | 4.4 | 39.9 |
+| **Config 14) (Ours)** | 76.4 | 62.0 | 46.9 | 62.2 | 3.1 | 69.6 | 36.6 | 66.8 | 4.0 | 29.6 | 64.1 | 23.4 | 78.1 | **75.3** | 31.2 | 62.6 | 69.6 | 33.9 | 68.7 | 14.9 | 49.0 |
+| **Config 15) (Ours)** | 76.0 | **74.2** | 67.1 | **64.7** | 4.7 | 72.7 | 64.5 | 68.7 | 3.6 | 33.7 | 23.4 | 34.0 | 77.2 | 71.5 | 64.9 | 3.2 | 23.1 | **67.5** | 73.6 | 59.3 | **51.4** |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Best Category APs (Ours)** | **76.8** | **74.2** | **72.1** | **64.7** | **65.1** | **74.6** | **67.9** | **75.2** | **65.6** | **65.7** | **73.4** | **66.0** | **82.7** | **75.3** | **68.8** | **65.2** | **70.0** | **67.5** | **76.5** | **64.3** | **70.6** | -->
 
 </p>
 
@@ -135,9 +208,10 @@ The following jupyter notebooks are provided to demonstrate the functionality of
 - [Visualisations.ipynb](https://github.com/mbar0075/SaRLVision/tree/main/Experiments/RL%20Agent%20Training/Visualisations.ipynb)
 - [Self-Explainability.ipynb](https://github.com/mbar0075/SaRLVision/tree/main/Experiments/RL%20Agent%20Training/Self-Explainability.ipynb)
 - [Plotting Results.ipynb](https://github.com/mbar0075/SaRLVision/tree/main/Experiments/RL%20Agent%20Training/Plotting_Results.ipynb) 
+- [Generate-GIFs.ipynb](https://github.com/mbar0075/SaRLVision/tree/main/Experiments/RL%20Agent%20Training/Generate-GIFs.ipynb) 
   
 </p>
--->
+
 
 ## Installation
 To get started, clone the repository and navigate to it:
