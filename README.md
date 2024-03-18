@@ -70,7 +70,7 @@ Initially, the system proceeds to generate a saliency ranking heatmap using the 
 </p>
 
 <p align='center'>
-  <img src="Diagrams/Architecture.png" alt="Architecture" width="100%" height="auto">
+  <img src="Diagrams/Architecture.png" alt="Architecture" width="80%" height="auto">
 </p>
 
 ## Saliency Ranking
@@ -81,7 +81,7 @@ The initial process in the development of the system involves the utilisation of
 </p>
 
 <p align='center'>
-  <img src="Diagrams/SaRa -3D plot.png" alt="SaRa" width="100%" height="auto">
+  <img src="Diagrams/SaRa -3D plot.png" alt="SaRa" width="70%" height="auto">
 </p>
 
 ## Reinforcement Learning
@@ -170,7 +170,7 @@ This window is implemented using the `pygame` library, which is a popular framew
 The designed SaRLVision system was extensively tested for a number of environment configurations with the aforementioned agents across a set of experiments. The system was evaluated through the `mean Average Precision (mAP)` metric, which is a widely used metric for evaluating object detection models. The mAP metric is calculated by averaging the precision-recall curve for each class, and then averaging the results across all classes. This metric provides a comprehensive evaluation of the model's performance, taking into account both precision and recall. Furthermore, the developed agents where trained on the `Pascal VOC 2007+2012 training` set and evaluated on the `Pascal VOC 2007 test` set, which is a standard benchmark dataset for object detection, as prevalent in the literature. The results showcasing different agents and different environment configurations are presented below:
 
 <p align='center'>
-  <img src="Diagrams/figures/Experiment3/total_reward_vs_episode_train.png" alt="Evaluation Diagram" width="100%" height="auto">
+  <img src="Diagrams/figures/Experiment3/total_reward_vs_episode_train.png" alt="Evaluation Diagram" width="80%" height="auto">
 </p>
 
 <!-- | **Index** | **aero** | **bike** | **bird** | **boat** | **bottle** | **bus** | **car** | **cat** | **chair** | **cow** | **table** | **dog** | **horse** | **mbike** | **person** | **plant** | **sheep** | **sofa** | **train** | **tv** | **mAP** |
