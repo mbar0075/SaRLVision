@@ -646,7 +646,7 @@ class DQNAgent():
             frames[i] = cv2.resize(frames[i], (new_width, new_height))
 
         # Saving frames as GIF
-        imageio.mimsave(gif_filename, frames, duration=10)  # duration in seconds per frame
+        imageio.mimsave(gif_filename, frames, duration=60)  # duration in seconds per frame
 
         print('\033[92mGIF saved to:\033[0m {}'.format(gif_filename))
 
