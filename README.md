@@ -195,6 +195,18 @@ The designed SaRLVision system was extensively tested for a number of environmen
 
 </p>
 
+## A Demonstration
+
+<p align="justify">
+
+Need a visual demonstration of the system in action? Check out the following video:
+<center>
+
+<a href="https://www.youtube.com/watch?v=S8gUYhOAAkE">https://www.youtube.com/watch?v=S8gUYhOAAkE</a>
+
+</center>
+</p>
+
 ## Getting Started
 
 <p align="justify">
