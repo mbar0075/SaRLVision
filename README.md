@@ -244,7 +244,7 @@ conda activate SaRLVision
 Alternatively you can create the environment manually by running the following commands and install the packages in the `requirements.txt` file in the `Requirements` directory:
 ```bash
 cd Requirements
-conda env create SaRLVision
+conda create --name SaRLVision python=3.9.16
 conda activate SaRLVision
 pip install -r requirements.txt
 ```
@@ -254,8 +254,10 @@ In case you want to install the packages manually, you can do so by running the 
 <summary  style="color: lightblue; cursor: pointer"><i> pip install . . .</i></summary>
 
 ```bash
+pip install notebook
 conda install swig
 conda install nomkl
+pip install opencv-python
 pip install gymnasium[all]
 pip install ufal.pybox2d
 pip install pygame
