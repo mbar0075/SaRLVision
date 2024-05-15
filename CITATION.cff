@@ -25,44 +25,46 @@ authors:
     orcid: 'https://orcid.org/0000-0002-8274-6177'
 repository-code: 'https://github.com/mbar0075/SaRLVision'
 abstract: >-
-  In an era where sustainability, and transparency are
+  In an era where sustainability and transparency are
   paramount, the importance of effective object detection
-  algorithms cannot be overstated. While these algorithms
-  are notably fast, they lack transparency in their
-  decision-making process. This study explores a series of
-  experiments on object detection, which combine
+  algorithms, pivotal for enhancing efficiency, safety, and
+  automation across various domains, cannot be overstated.
+  While these algorithms such as YOLO and Faster R-CNN, are
+  notably fast, unfortunately they lack transparency in
+  their decision-making process. This study explores a
+  series of experiments on object detection, which combines
   reinforcement learning-based visual attention methods with
   saliency ranking techniques, in an effort to investigate
   transparent and sustainable solutions. By employing
   saliency ranking techniques that emulate human visual
   perception, the reinforcement learning agent is provided
-  with an initial bounding box prediction. Given this
-  preliminary estimate, the agent iteratively refines these
-  bounding box predictions by selecting from a finite set of
-  actions over multiple time steps, ultimately achieving
-  accurate object detection. This research also investigates
-  the use of various image feature extraction methods, in
-  addition to exploring various Deep Q-Network (DQN)
-  architectural variations for deep reinforcement
-  learning-based localisation agent training. Additionally,
-  it focuses on optimising the pipeline at every juncture by
-  prioritising lightweight and faster models. Furthermore,
-  the designed system also allows for the classification of
-  detected objects, a capability absent in previous
-  reinforcement learning approaches. After evaluating the
-  performance of these agents using the Pascal VOC 2007
-  dataset, faster and more optimised models were developed.
-  Notably, the best mean Average Precision (mAP) achieved in
-  this study was 51.4, surpassing benchmarks from RL-based
-  single object detectors present in the literature.
-  Compared to previous methods, the designed system also
-  includes multiple configurable real-time visualisations.
-  These visualisations offer users a clear view of the
-  current bounding boxes coordinates and the types of
-  actions being performed, both of which enable a more
-  intuitive understanding of algorithmic decisions.
-  Ultimately, fostering trust and transparency in object
-  detection systems, aiding in the deployment of artificial
+  with an initial bounding box prediction. The agent, then
+  iteratively refines these bounding box predictions by
+  selecting from a finite set of actions over multiple time
+  steps, ultimately achieving accurate object detection.
+  This research also investigates the use of various image
+  feature extraction methods, in addition to exploring
+  diverse Deep Q-Network (DQN) architectural variations for
+  deep reinforcement learning-based localisation agent
+  training. Additionally, it focuses on optimising the
+  pipeline at every juncture by prioritising lightweight and
+  faster models. Another feature of the proposed system
+  includes the classification of detected objects, a
+  capability absent in previous reinforcement learning
+  approaches. After evaluating the performance of these
+  agents using the Pascal VOC 2007 dataset, faster and more
+  optimised models were developed. Notably, the best mean
+  Average Precision (mAP) achieved in this study was 51.4,
+  surpassing benchmarks from RL-based single object
+  detectors present in the literature. The designed system
+  provides a distinct edge over previous methods by allowing
+  multiple configurable real-time visualisations. These
+  visualisations offer users a clear view of the current
+  bounding boxes' coordinates and the types of actions being
+  performed, both of which enable a more intuitive
+  understanding of algorithmic decisions. Ultimately,
+  fostering trust and transparency in object detection
+  systems, aiding in the deployment of artificial
   intelligence techniques in high-risk areas, while
   continuously advancing research in the field of AI.
 keywords:
